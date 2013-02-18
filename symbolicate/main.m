@@ -27,7 +27,6 @@ int main (int argc, char *argv[]) {
 
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
-#if !TARGET_IPHONE_SIMULATOR
     if (argc > 1) {
         NSString *filepath = [NSString stringWithUTF8String:argv[1]];
         NSString *result = symbolicate(filepath, nil);
@@ -53,7 +52,6 @@ int main (int argc, char *argv[]) {
         printf("Result written to %s.\n", [result UTF8String]);
 #endif
     }
-#endif
 
     [pool drain];
     return ret;
