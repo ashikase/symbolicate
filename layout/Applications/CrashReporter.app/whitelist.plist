@@ -1,23 +1,4 @@
 {
-	SignalFilters = (
-		SIGQUIT,
-		SIGEMT,
-		SIGTRAP,
-	);
-	"ReverseFunctionFilters" = (
-		"__kill",
-	);
-	FunctionFilters = (
-		"mach_msg_trap",
-		"semaphore_wait_signal_trap",
-		"semaphore_timedwait_signal_trap",
-		"__semwait_signal",
-		"select$DARWIN_EXTSN",
-		accept,
-		recvfrom,
-		read,
-		kevent,
-	);
 	Filters = (
 		"/Applications/AppStore.app/AppStore",
 		"/Applications/Calculator.app/Calculator",
@@ -40,7 +21,6 @@
 		"/Applications/YouTube.app/YouTube",
 		"/Library/MobileSubstrate/MobileSafety.dylib",
 		"/Library/MobileSubstrate/MobileSubstrate.dylib",
-		"/System/Library/CoreServices/SpringBoard.app/SpringBoard",
 		"/usr/lib/libAccessibility.dylib",
 		"/usr/lib/libafc.dylib",
 		"/usr/lib/libbsm.0.dylib",
@@ -84,9 +64,29 @@
 		"/usr/lib/libffi.dylib",
 		"/Library/MobileSubstrate/DynamicLibraries/CydgetLoader.dylib",
 	);
+	FunctionFilters = (
+		"mach_msg_trap",
+		"semaphore_wait_signal_trap",
+		"semaphore_timedwait_signal_trap",
+		"__semwait_signal",
+		"select$DARWIN_EXTSN",
+		accept,
+		recvfrom,
+		read,
+		kevent,
+	);
 	PrefixFilters = (
-		"/System/Library/Frameworks/",
-		"/System/Library/PrivateFrameworks/",
-		"/System/Library/TextInput/",
+		"/System/Library/CoreServices",
+		"/System/Library/Frameworks",
+		"/System/Library/PrivateFrameworks",
+		"/System/Library/TextInput",
+	);
+	"ReverseFunctionFilters" = (
+		"__kill",
+	);
+	SignalFilters = (
+		SIGQUIT,
+		SIGEMT,
+		SIGTRAP,
 	);
 }
