@@ -186,15 +186,15 @@ NSString *symbolicate(NSString *content, id hudReply) {
 
     enum SymbolicationMode mode = SM_CheckingMode;
 
-    NSMutableArray *extraInfoArr = [[NSMutableArray alloc] init];
+    NSMutableArray *extraInfoArray = [[NSMutableArray alloc] init];
     NSMutableDictionary *binaryImages = [[NSMutableDictionary alloc] init];
 
     NSDictionary *whiteListFile = [[NSDictionary alloc] initWithContentsOfFile:[mainBundle pathForResource:@"whitelist" ofType:@"plist"]];
-    NSArray *sigFilters = [whiteListFile objectForKey:@"SignalFilters"];
+    NSArray *signalFilters = [whiteListFile objectForKey:@"SignalFilters"];
     BOOL isFilteredSignal = YES;
 
     for (NSString *line in contentLines) {
-        BOOL isBinImg = [line isEqualToString:@"Binary Images:"];
+        BOOL isBinaryImage = [line isEqualToString:@"Binary Images:"];
         id extraInfo = [NSNull null];
         // extraInfo:
         //   - true = start of crashing thread.
@@ -206,7 +206,7 @@ NSString *symbolicate(NSString *content, id hudReply) {
             case SM_CheckingMode:
                 if ([line hasPrefix:@"Thread 0"]) {
                     mode = SM_BacktraceMode;
-                } else if (isBinImg) {
+                } else if (isBinaryImage) {
                     goto finish;
                 } else if ([line hasPrefix:@"Exception Type:"]) {
                     NSUInteger lastCloseParenthesis = [line rangeOfString:@")" options:NSBackwardsSearch].location;
@@ -216,7 +216,7 @@ NSString *symbolicate(NSString *content, id hudReply) {
                         if (lastOpenParenthesis < lastCloseParenthesis) {
                             range = NSMakeRange(lastOpenParenthesis + 1, lastCloseParenthesis - lastOpenParenthesis - 1);
                             NSString *signalStr = [line substringWithRange:range];
-                            isFilteredSignal = isFilteredSignal && ![sigFilters containsObject:signalStr];
+                            isFilteredSignal = isFilteredSignal && ![signalFilters containsObject:signalStr];
                         }
                     }
                     break;
@@ -225,7 +225,7 @@ NSString *symbolicate(NSString *content, id hudReply) {
                 }
 
             case SM_BacktraceMode:
-                if (isBinImg) {
+                if (isBinaryImage) {
                     mode = SM_BinaryImageMode;
                 } else if ([line length] > 0) {
                     if ([line hasSuffix:@"Crashed:"]) {
@@ -233,10 +233,10 @@ NSString *symbolicate(NSString *content, id hudReply) {
                     } else if ([line hasSuffix:@":"]) {
                         extraInfo = (id)kCFBooleanFalse;
                     } else {
-                        NSArray *res = [line captureComponentsMatchedByRegex:@"^\\d+ +.*\\S\\s+0x([0-9a-f]+) 0x([0-9a-f]+) \\+ \\d+$"];
-                        if ([res count] == 3) {
+                        NSArray *array = [line captureComponentsMatchedByRegex:@"^\\d+ +.*\\S\\s+0x([0-9a-f]+) 0x([0-9a-f]+) \\+ \\d+$"];
+                        if ([array count] == 3) {
                             NSString *matches[2];
-                            [res getObjects:matches range:NSMakeRange(1, 2)];
+                            [array getObjects:matches range:NSMakeRange(1, 2)];
 
                             BacktraceInfo *bti = [[[BacktraceInfo alloc] init] autorelease];
                             // bti->binary = matches[0];
@@ -249,35 +249,35 @@ NSString *symbolicate(NSString *content, id hudReply) {
                 break;
 
             case SM_BinaryImageMode: {
-                NSArray *res = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +](.+?) arm\\w*  (?:&lt;[0-9a-f]{32}&gt; )?(.+)$"];
-                if ([res count] != 4) {
+                NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +](.+?) arm\\w*  (?:&lt;[0-9a-f]{32}&gt; )?(.+)$"];
+                if ([array count] != 4) {
                     goto finish;
                 }
-                [binaryImages setObject:res forKey:[res objectAtIndex:1]];
+                [binaryImages setObject:array forKey:[array objectAtIndex:1]];
                 break;
             }
         }
 
-        [extraInfoArr addObject:extraInfo];
+        [extraInfoArray addObject:extraInfo];
     }
 
 finish:;
     NSCharacterSet *escSet = [NSCharacterSet characterSetWithCharactersInString:@"<>&"];
 
-    NSUInteger i = 0; //, total_lines = [extraInfoArr count];
+    NSUInteger i = 0; //, total_lines = [extraInfoArray count];
     BOOL isCrashing = NO;
     BOOL hasHeaderFromSharedCacheWithPath = [VMUMemory_File respondsToSelector:@selector(headerFromSharedCacheWithPath:)];
     NSSet *filters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"Filters"]];
     NSArray *prefixFilters = [[whiteListFile objectForKey:@"PrefixFilters"] retain];
-    NSSet *funcFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"FunctionFilters"]];
-    NSSet *reverseFuncFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"ReverseFunctionFilters"]];
+    NSSet *functionFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"FunctionFilters"]];
+    NSSet *reverseFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"ReverseFunctionFilters"]];
     [whiteListFile release];
-    Class bicls = [BinaryInfo class];
+    Class $BinaryInfo = [BinaryInfo class];
     //int last_percent = 0;
 
     Ivar _command_ivar = class_getInstanceVariable([VMULoadCommand class], "_command");
 
-    for (BacktraceInfo *bti in extraInfoArr) {
+    for (BacktraceInfo *bti in extraInfoArray) {
 #if 0
         int this_percent = MIN(100, 200 * i / total_lines);
         if (this_percent != last_percent) {
@@ -293,7 +293,7 @@ finish:;
         } else if (bti != (id)kCFNull) {
             BinaryInfo *bi = [binaryImages objectForKey:bti->start_address];
             if (bi != nil) {
-                if (![bi isKindOfClass:bicls]) {
+                if (![bi isKindOfClass:$BinaryInfo]) {
                     NSString *matches[3];
                     [(NSArray *)bi getObjects:matches range:NSMakeRange(1, 3)];
 
@@ -361,45 +361,45 @@ finish:;
                 }
 
 dont_blame:;
-                NSString *extra_string = nil;
-                unsigned long long addr = bti->address + bi->slide;
+                NSString *lineComment = nil;
+                unsigned long long address = bti->address + bi->slide;
 
-                VMUSourceInfo *srcInfo = [bi->owner sourceInfoForAddress:addr];
+                VMUSourceInfo *srcInfo = [bi->owner sourceInfoForAddress:address];
                 if (srcInfo != nil) {
-                    extra_string = [NSString stringWithFormat:@"\t// %@:%u", escapeHTML([srcInfo path], escSet), [srcInfo lineNumber]];
+                    lineComment = [NSString stringWithFormat:@"\t// %@:%u", escapeHTML([srcInfo path], escSet), [srcInfo lineNumber]];
                 } else {
-                    VMUSymbol *sym = [bi->owner symbolForAddress:addr];
-                    if (sym != nil) {
+                    VMUSymbol *symbol = [bi->owner symbolForAddress:address];
+                    if (symbol != nil) {
                         // Determine name of symbol
-                        NSString *symname = [sym name];
-                        if ([symname isEqualToString:@"<redacted>"] && hasHeaderFromSharedCacheWithPath) {
-                            NSString *localName = nameForLocalSymbol([bi->header address], [sym addressRange].location);
+                        NSString *name = [symbol name];
+                        if ([name isEqualToString:@"<redacted>"] && hasHeaderFromSharedCacheWithPath) {
+                            NSString *localName = nameForLocalSymbol([bi->header address], [symbol addressRange].location);
                             if (localName != nil) {
-                                symname = localName;
+                                name = localName;
                             } else {
-                                fprintf(stderr, "Unable to determine name for: %s, 0x%08llx\n", [bi->path UTF8String], [sym addressRange].location);
+                                fprintf(stderr, "Unable to determine name for: %s, 0x%08llx\n", [bi->path UTF8String], [symbol addressRange].location);
                             }
                         }
                         if (isCrashing) {
                             // Check if this function should never cause crash (only hang).
-                            if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [funcFilters containsObject:symname])
+                            if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [functionFilters containsObject:name])
                                 isCrashing = NO;
                         } else if (!isCrashing) {
                             // Check if this function is actually causing crash.
-                            if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [reverseFuncFilters containsObject:symname]) {
+                            if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [reverseFilters containsObject:name]) {
                                 isCrashing = YES;
                             }
                         }
-                        extra_string = [NSString stringWithFormat:@"\t// %@ + 0x%llx", escapeHTML(symname, escSet), addr - [sym addressRange].location];
+                        lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", escapeHTML(name, escSet), address - [symbol addressRange].location];
                     } else if (!bi->encrypted) {
                         // Try to extract some ObjC info.
-                        extra_string = extractObjectiveCInfo(bi->header, bi->objcArray, addr);
+                        lineComment = extractObjectiveCInfo(bi->header, bi->objcArray, address);
                     }
                 }
 
-                if (extra_string != nil) {
-                    NSString *orig_line = [contentLines objectAtIndex:i];
-                    [contentLines replaceObjectAtIndex:i withObject:[orig_line stringByAppendingString:extra_string]];
+                if (lineComment != nil) {
+                    NSString *newLine = [[contentLines objectAtIndex:i] stringByAppendingString:lineComment];
+                    [contentLines replaceObjectAtIndex:i withObject:newLine];
                 }
             }
         }
@@ -407,17 +407,17 @@ dont_blame:;
 found_nothing:
         ++ i;
     }
-    [extraInfoArr release];
+    [extraInfoArray release];
     [filters release];
     [prefixFilters release];
-    [funcFilters release];
-    [reverseFuncFilters release];
+    [functionFilters release];
+    [reverseFilters release];
 
     /*
     if (isFilteredSignal) {
         for (NSString *name in binaryImages) {
             BinaryInfo *bi = [binaryImages objectForKey:name];
-            if ([bi isKindOfClass:bicls] && (bi->line & 0x80000000)) {
+            if ([bi isKindOfClass:$BinaryInfo] && (bi->line & 0x80000000)) {
                 isFilteredSignal = NO;
                 break;
             }
@@ -430,7 +430,7 @@ found_nothing:
     if (isFilteredSignal) {
         for (NSString *name in binaryImages) {
             BinaryInfo *bi = [binaryImages objectForKey:name];
-            if ([bi isKindOfClass:bicls] && bi->line != ~0u) {
+            if ([bi isKindOfClass:$BinaryInfo] && bi->line != ~0u) {
                 [blameInfo appendFormat:@"<array><string>%@</string><integer>%d</integer></array>\n", escapeHTML(bi->path, escSet), bi->line];
             }
         }
