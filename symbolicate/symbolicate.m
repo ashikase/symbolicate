@@ -495,9 +495,7 @@ found_nothing:
     NSString *symbolicatedFile = [[[file stringByDeletingPathExtension] stringByAppendingString:@".symbolicated.plist"] retain];
     NSString *lines_to_write = [file_lines componentsJoinedByString:@"\n"];
     [file_lines release];
-    if ([lines_to_write writeToFile:symbolicatedFile atomically:NO encoding:NSUTF8StringEncoding error:NULL]) {
-        [[NSFileManager defaultManager] removeItemAtPath:file error:NULL];
-    } else {
+    if (![lines_to_write writeToFile:symbolicatedFile atomically:NO encoding:NSUTF8StringEncoding error:NULL]) {
         char temp_name[strlen("/tmp/crash_reporter.XXXXXX") + 1];
         memcpy(temp_name, "/tmp/crash_reporter.XXXXXX", sizeof(temp_name));
         mktemp(temp_name);
