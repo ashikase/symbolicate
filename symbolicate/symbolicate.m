@@ -492,23 +492,10 @@ found_nothing:
     [file_lines insertObject:blameInfo atIndex:[file_lines count] - 3];
     [binaryImages release];
 
-    NSString *symbolicatedFile = [[[file stringByDeletingPathExtension] stringByAppendingString:@".symbolicated.plist"] retain];
-    NSString *lines_to_write = [file_lines componentsJoinedByString:@"\n"];
-    [file_lines release];
-    if (![lines_to_write writeToFile:symbolicatedFile atomically:NO encoding:NSUTF8StringEncoding error:NULL]) {
-        char temp_name[strlen("/tmp/crash_reporter.XXXXXX") + 1];
-        memcpy(temp_name, "/tmp/crash_reporter.XXXXXX", sizeof(temp_name));
-        mktemp(temp_name);
-        [lines_to_write writeToFile:[NSString stringWithUTF8String:temp_name] atomically:NO encoding:NSUTF8StringEncoding error:NULL];
-        const char *actual_sym_file_path = [[curPath stringByAppendingPathComponent:symbolicatedFile] UTF8String];
-        const char *actual_file_path = [[curPath stringByAppendingPathComponent:file] UTF8String];
-
-        exec_move_as_root(temp_name, actual_sym_file_path, actual_file_path);
-    }
-
     [pool drain];
 
-    return [symbolicatedFile autorelease];
+    [file_lines autorelease];
+    return [file_lines componentsJoinedByString:@"\n"];
 }
 
 #else

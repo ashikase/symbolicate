@@ -23,18 +23,40 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 int main (int argc, char *argv[]) {
+    int ret = 1;
+
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
 #if !TARGET_IPHONE_SIMULATOR
     if (argc > 2 && strcmp(argv[1], "-s") == 0) {
-        NSString *file = [NSString stringWithUTF8String:argv[2]];
-        NSString *res = symbolicate(file, nil);
-        printf("Result written to %s.\n", [res UTF8String]);
+        NSString *filepath = [NSString stringWithUTF8String:argv[2]];
+        NSString *result = symbolicate(filepath, nil);
+        if (result != nil) {
+            printf("%s\n", [result UTF8String]);
+            ret = 0;
+        }
+#if 0
+        NSString *symbolicatedFile = [[[file stringByDeletingPathExtension] stringByAppendingString:@".symbolicated.plist"] retain];
+        NSString *lines_to_write = [file_lines componentsJoinedByString:@"\n"];
+        [file_lines release];
+        if (![lines_to_write writeToFile:symbolicatedFile atomically:NO encoding:NSUTF8StringEncoding error:NULL]) {
+            char temp_name[strlen("/tmp/crash_reporter.XXXXXX") + 1];
+            memcpy(temp_name, "/tmp/crash_reporter.XXXXXX", sizeof(temp_name));
+            mktemp(temp_name);
+            [lines_to_write writeToFile:[NSString stringWithUTF8String:temp_name] atomically:NO encoding:NSUTF8StringEncoding error:NULL];
+            const char *actual_sym_file_path = [[curPath stringByAppendingPathComponent:symbolicatedFile] UTF8String];
+            const char *actual_file_path = [[curPath stringByAppendingPathComponent:file] UTF8String];
+
+            exec_move_as_root(temp_name, actual_sym_file_path, actual_file_path);
+        }
+
+        printf("Result written to %s.\n", [result UTF8String]);
+#endif
     }
 #endif
 
     [pool drain];
-    return 0;
+    return ret;
 }
 
 /* vim: set ft=objc ff=unix sw=4 ts=4 tw=80 expandtab: */
