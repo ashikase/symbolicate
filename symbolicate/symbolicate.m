@@ -180,27 +180,27 @@ NSString *symbolicate(NSString *content, id hudReply) {
 
     NSMutableArray *contentLines = [[content componentsSeparatedByString:@"\n"] mutableCopy];
 
-    NSBundle *mainBundle = [NSBundle mainBundle];
-    //NSString *symbolicating = [mainBundle localizedStringForKey:@"Symbolicating (%d%%)" value:nil table:nil];
-    //[hudReply updateText:[NSString stringWithFormat:symbolicating, 0]];
+    NSDictionary *whiteListFile = [[NSDictionary alloc] initWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"whitelist" ofType:@"plist"]];
+    NSSet *filters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"Filters"]];
+    NSSet *functionFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"FunctionFilters"]];
+    NSSet *reverseFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"ReverseFunctionFilters"]];
+    NSArray *prefixFilters = [whiteListFile objectForKey:@"PrefixFilters"];
+    NSArray *signalFilters = [whiteListFile objectForKey:@"SignalFilters"];
+    [whiteListFile release];
 
     enum SymbolicationMode mode = SM_CheckingMode;
-
     NSMutableArray *extraInfoArray = [[NSMutableArray alloc] init];
     NSMutableDictionary *binaryImages = [[NSMutableDictionary alloc] init];
-
-    NSDictionary *whiteListFile = [[NSDictionary alloc] initWithContentsOfFile:[mainBundle pathForResource:@"whitelist" ofType:@"plist"]];
-    NSArray *signalFilters = [whiteListFile objectForKey:@"SignalFilters"];
     BOOL isFilteredSignal = YES;
 
     for (NSString *line in contentLines) {
-        BOOL isBinaryImage = [line isEqualToString:@"Binary Images:"];
-        id extraInfo = [NSNull null];
         // extraInfo:
         //   - true = start of crashing thread.
         //   - false = start of non-crashing thread.
         //   - BacktraceInfo = backtrace info :)
         //   - null = irrelevant.
+        id extraInfo = [NSNull null];
+        BOOL isBinaryImage = [line isEqualToString:@"Binary Images:"];
 
         switch (mode) {
             case SM_CheckingMode:
@@ -264,15 +264,11 @@ NSString *symbolicate(NSString *content, id hudReply) {
 finish:;
     NSCharacterSet *escSet = [NSCharacterSet characterSetWithCharactersInString:@"<>&"];
 
-    NSUInteger i = 0; //, total_lines = [extraInfoArray count];
+    NSUInteger i = 0;
     BOOL isCrashing = NO;
     BOOL hasHeaderFromSharedCacheWithPath = [VMUMemory_File respondsToSelector:@selector(headerFromSharedCacheWithPath:)];
-    NSSet *filters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"Filters"]];
-    NSArray *prefixFilters = [[whiteListFile objectForKey:@"PrefixFilters"] retain];
-    NSSet *functionFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"FunctionFilters"]];
-    NSSet *reverseFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"ReverseFunctionFilters"]];
-    [whiteListFile release];
     Class $BinaryInfo = [BinaryInfo class];
+    //NSUInteger total_lines = [extraInfoArray count];
     //int last_percent = 0;
 
     Ivar _command_ivar = class_getInstanceVariable([VMULoadCommand class], "_command");
@@ -405,11 +401,10 @@ dont_blame:;
         }
 
 found_nothing:
-        ++ i;
+        ++i;
     }
     [extraInfoArray release];
     [filters release];
-    [prefixFilters release];
     [functionFilters release];
     [reverseFilters release];
 
