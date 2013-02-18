@@ -105,4 +105,4 @@ NSString *nameForLocalSymbol(uint32_t dylibOffset, uint32_t symbolAddress) {
     return [name autorelease];
 }
 
-// vim: ft=objcpp
+/* vim: set ft=objcpp ff=unix sw=4 ts=4 tw=80 expandtab: */

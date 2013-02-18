@@ -72,4 +72,4 @@ typedef struct _VMURange {
 
 #endif // SYMBOLICATE_HEADERS_H_
 
-// vim: ft=objc
+/* vim: set ft=objc ff=unix sw=4 ts=4 tw=80 expandtab: */
