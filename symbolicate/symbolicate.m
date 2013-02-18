@@ -260,7 +260,9 @@ finish:
 						header = [VMUMemory_File headerFromSharedCacheWithPath:matches[2]];
 					if (header == nil)
 						header = [VMUMemory_File headerWithPath:matches[2]];
+					if (![header isKindOfClass:[VMUMachOHeader class]]) {
 						header = [[VMUHeader extractMachOHeadersFromHeader:header matchingArchitecture:[VMUArchitecture currentArchitecture] considerArchives:NO] lastObject];
+					}
 
 					if (header != nil) {
 						bi = [[BinaryInfo alloc] init];
