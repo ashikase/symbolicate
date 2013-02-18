@@ -175,20 +175,12 @@ static NSString *escapeHTML(NSString *x, NSCharacterSet *escSet) {
     }
 }
 
-NSString *symbolicate(NSString *file, id hudReply) {
+NSString *symbolicate(NSString *content, id hudReply) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
-    NSString *file_content = [[NSString alloc] initWithContentsOfFile:file encoding:NSUTF8StringEncoding error:NULL];
-    if ([file_content length] == 0) {
-        [file_content release];
-        return nil;
-    }
+    NSMutableArray *contentLines = [[content componentsSeparatedByString:@"\n"] mutableCopy];
 
     NSBundle *mainBundle = [NSBundle mainBundle];
-
-    NSMutableArray *file_lines = [[file_content componentsSeparatedByString:@"\n"] mutableCopy];
-    [file_content release];
-
     //NSString *symbolicating = [mainBundle localizedStringForKey:@"Symbolicating (%d%%)" value:nil table:nil];
     //[hudReply updateText:[NSString stringWithFormat:symbolicating, 0]];
 
@@ -201,7 +193,7 @@ NSString *symbolicate(NSString *file, id hudReply) {
     NSArray *sigFilters = [whiteListFile objectForKey:@"SignalFilters"];
     BOOL isFilteredSignal = YES;
 
-    for (NSString *line in file_lines) {
+    for (NSString *line in contentLines) {
         BOOL isBinImg = [line isEqualToString:@"Binary Images:"];
         id extraInfo = [NSNull null];
         // extraInfo:
@@ -406,8 +398,8 @@ dont_blame:;
                 }
 
                 if (extra_string != nil) {
-                    NSString *orig_line = [file_lines objectAtIndex:i];
-                    [file_lines replaceObjectAtIndex:i withObject:[orig_line stringByAppendingString:extra_string]];
+                    NSString *orig_line = [contentLines objectAtIndex:i];
+                    [contentLines replaceObjectAtIndex:i withObject:[orig_line stringByAppendingString:extra_string]];
                 }
             }
         }
@@ -444,13 +436,13 @@ found_nothing:
         }
     }
     [blameInfo appendString:@"</array>"];
-    [file_lines insertObject:blameInfo atIndex:[file_lines count] - 3];
+    [contentLines insertObject:blameInfo atIndex:[contentLines count] - 3];
     [binaryImages release];
 
     [pool drain];
 
-    [file_lines autorelease];
-    return [file_lines componentsJoinedByString:@"\n"];
+    [contentLines autorelease];
+    return [contentLines componentsJoinedByString:@"\n"];
 }
 
 /* vim: set ft=objc ff=unix sw=4 ts=4 tw=80 expandtab: */

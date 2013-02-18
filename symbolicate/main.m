@@ -29,10 +29,13 @@ int main (int argc, char *argv[]) {
 
     if (argc > 1) {
         NSString *filepath = [NSString stringWithUTF8String:argv[1]];
-        NSString *result = symbolicate(filepath, nil);
-        if (result != nil) {
-            printf("%s\n", [result UTF8String]);
-            ret = 0;
+        NSString *content = [NSString stringWithContentsOfFile:filepath encoding:NSUTF8StringEncoding error:NULL];
+        if (content != nil) {
+            NSString *result = symbolicate(content, nil);
+            if (result != nil) {
+                printf("%s\n", [result UTF8String]);
+                ret = 0;
+            }
         }
 #if 0
         NSString *symbolicatedFile = [[[file stringByDeletingPathExtension] stringByAppendingString:@".symbolicated.plist"] retain];
