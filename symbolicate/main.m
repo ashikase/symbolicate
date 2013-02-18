@@ -28,8 +28,8 @@ int main (int argc, char *argv[]) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
 #if !TARGET_IPHONE_SIMULATOR
-    if (argc > 2 && strcmp(argv[1], "-s") == 0) {
-        NSString *filepath = [NSString stringWithUTF8String:argv[2]];
+    if (argc > 1) {
+        NSString *filepath = [NSString stringWithUTF8String:argv[1]];
         NSString *result = symbolicate(filepath, nil);
         if (result != nil) {
             printf("%s\n", [result UTF8String]);
