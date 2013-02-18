@@ -50,15 +50,6 @@ enum SymbolicationMode {
 @end
 @implementation BacktraceInfo @end
 
-
-@interface ObjCInfo : NSObject {
-    @package
-        unsigned long long impAddr;
-        NSString *name;
-}
-@end
-@implementation ObjCInfo @end
-
 @interface BinaryInfo : NSObject {
     @package
         // slide = text address - actual address
@@ -73,8 +64,102 @@ enum SymbolicationMode {
 @end
 @implementation BinaryInfo @end
 
+@interface ObjCInfo : NSObject {
+    @package
+        unsigned long long impAddr;
+        NSString *name;
+}
+@end
+@implementation ObjCInfo @end
+
 static CFComparisonResult CompareObjCInfos(ObjCInfo *a, ObjCInfo *b) {
     return (a->impAddr < b->impAddr) ? kCFCompareLessThan : (a->impAddr > b->impAddr) ? kCFCompareGreaterThan : kCFCompareEqualTo;
+}
+
+// NOTE: The code for this function was copied from MachO_File of the Peace project.
+static NSString *extractObjectiveCInfo(VMUMachOHeader *header, NSArray *inputArray, unsigned long long address) {
+    NSString *string = nil;
+
+    NSMutableArray *array = [inputArray mutableCopy];
+    if (array == nil) {
+        array = [NSMutableArray array];
+
+        id<VMUMemoryView> mem = (id<VMUMemoryView>)[[header memory] view];
+        VMUSegmentLoadCommand *dataSeg = [header segmentNamed:@"__DATA"];
+        long long vmdiff_data = [dataSeg fileoff] - [dataSeg vmaddr];
+        VMUSegmentLoadCommand *textSeg = [header segmentNamed:@"__TEXT"];
+        long long vmdiff_text = [textSeg fileoff] - [textSeg vmaddr];
+
+        VMUSection *clsListSect = [dataSeg sectionNamed:@"__objc_classlist"];
+
+        @try {
+            [mem setCursor:[clsListSect offset]];
+            unsigned size = (unsigned) [clsListSect size];
+            for (unsigned ii = 0; ii < size; ii += 4) {
+                unsigned vm_address = [mem uint32];
+                unsigned long long old_location = [mem cursor];
+                [mem setCursor:vm_address + 16 + vmdiff_data];
+                unsigned data_loc = [mem uint32];
+                [mem setCursor:data_loc + vmdiff_data];
+                unsigned flag = [mem uint32];
+                [mem advanceCursor:12];
+                [mem setCursor:[mem uint32]+vmdiff_text];
+
+                char class_method = (flag & 1) ? '+' : '-';
+                NSString *class_name = [mem stringWithEncoding:NSUTF8StringEncoding];
+
+                [mem setCursor:data_loc + 20 + vmdiff_data];
+                unsigned baseMethod_loc = [mem uint32];
+                if (baseMethod_loc != 0) {
+                    [mem setCursor:baseMethod_loc + 4 + vmdiff_data];
+                    unsigned count = [mem uint32];
+                    for (unsigned j = 0; j < count; ++j) {
+                        ObjCInfo *info = [[ObjCInfo alloc] init];
+
+                        unsigned sel_name_addr = [mem uint32];
+                        [mem uint32];
+                        info->impAddr = [mem uint32] & ~1;
+                        unsigned long long old_loc_2 = [mem cursor];
+                        [mem setCursor:sel_name_addr + vmdiff_text];
+                        NSString *sel_name = [mem stringWithEncoding:NSUTF8StringEncoding];
+                        [mem setCursor:old_loc_2];
+
+                        info->name = [NSString stringWithFormat:@"%c[%@ %@]", class_method, class_name, sel_name];
+
+                        [array addObject:info];
+                        [info release];
+                    }
+                }
+
+                [mem setCursor:old_location];
+            }
+        } @catch (NSException *exception) {
+            NSLog(@"Warning: Exception '%@' generated when extracting Objective-C info for %@.", exception, [header path]);
+        }
+
+        [array sortUsingFunction:(void *)CompareObjCInfos context:NULL];
+    }
+
+    CFIndex count = [array count];
+    if (count != 0) {
+        ObjCInfo *obj_to_search = [[ObjCInfo alloc] init];
+        obj_to_search->impAddr = address;
+
+        CFIndex objcMatch = CFArrayBSearchValues((CFArrayRef)array, CFRangeMake(0, count), obj_to_search, (CFComparatorFunction)CompareObjCInfos, NULL);
+        [obj_to_search release];
+        if (objcMatch >= count) {
+            objcMatch = count - 1;
+        }
+        ObjCInfo *o = [array objectAtIndex:objcMatch];
+        if (o->impAddr > address) {
+            o = (objcMatch == 0) ? nil : [array objectAtIndex:objcMatch - 1];
+        }
+        if (o != nil) {
+            string = [NSString stringWithFormat:@"\t// %@ + 0x%llx", o->name, address - o->impAddr];
+        }
+    }
+
+    return string;
 }
 
 static NSString *escapeHTML(NSString *x, NSCharacterSet *escSet) {
@@ -366,85 +451,7 @@ dont_blame:;
                         extra_string = [NSString stringWithFormat:@"\t// %@ + 0x%llx", escapeHTML(symname, escSet), addr - [sym addressRange].location];
                     } else if (!bi->encrypted) {
                         // Try to extract some ObjC info.
-                        // NOTE: Copied from MachO_File of the Peace project.
-                        if (bi->objcArray == nil) {
-                            NSMutableArray *objcArr = [NSMutableArray array];
-
-                            id<VMUMemoryView> mem = (id<VMUMemoryView>)[[bi->header memory] view];
-                            VMUSegmentLoadCommand *dataSeg = [bi->header segmentNamed:@"__DATA"];
-                            long long vmdiff_data = [dataSeg fileoff] - [dataSeg vmaddr];
-                            VMUSegmentLoadCommand *textSeg = [bi->header segmentNamed:@"__TEXT"];
-                            long long vmdiff_text = [textSeg fileoff] - [textSeg vmaddr];
-
-                            VMUSection *clsListSect = [dataSeg sectionNamed:@"__objc_classlist"];
-
-                            @try {
-                                [mem setCursor:[clsListSect offset]];
-                                unsigned size = (unsigned) [clsListSect size];
-                                for (unsigned ii = 0; ii < size; ii += 4) {
-                                    unsigned vm_address = [mem uint32];
-                                    unsigned long long old_location = [mem cursor];
-                                    [mem setCursor:vm_address + 16 + vmdiff_data];
-                                    unsigned data_loc = [mem uint32];
-                                    [mem setCursor:data_loc + vmdiff_data];
-                                    unsigned flag = [mem uint32];
-                                    [mem advanceCursor:12];
-                                    [mem setCursor:[mem uint32]+vmdiff_text];
-
-                                    char class_method = (flag & 1) ? '+' : '-';
-                                    NSString *class_name = [mem stringWithEncoding:NSUTF8StringEncoding];
-
-                                    [mem setCursor:data_loc + 20 + vmdiff_data];
-                                    unsigned baseMethod_loc = [mem uint32];
-                                    if (baseMethod_loc != 0) {
-                                        [mem setCursor:baseMethod_loc + 4 + vmdiff_data];
-                                        unsigned count = [mem uint32];
-                                        for (unsigned j = 0; j < count; ++j) {
-                                            ObjCInfo *info = [[ObjCInfo alloc] init];
-
-                                            unsigned sel_name_addr = [mem uint32];
-                                            [mem uint32];
-                                            info->impAddr = [mem uint32] & ~1;
-                                            unsigned long long old_loc_2 = [mem cursor];
-                                            [mem setCursor:sel_name_addr + vmdiff_text];
-                                            NSString *sel_name = [mem stringWithEncoding:NSUTF8StringEncoding];
-                                            [mem setCursor:old_loc_2];
-
-                                            info->name = [NSString stringWithFormat:@"%c[%@ %@]", class_method, class_name, sel_name];
-
-                                            [objcArr addObject:info];
-                                            [info release];
-                                        }
-                                    }
-
-                                    [mem setCursor:old_location];
-                                }
-                            } @catch (NSException *exception) {
-                                NSLog(@"Warning: Exception '%@' generated when extracting Objective-C info for %@.", exception, bi->path);
-                            }
-
-                            [objcArr sortUsingFunction:(void *)CompareObjCInfos context:NULL];
-                            bi->objcArray = objcArr;
-                        }
-
-                        CFIndex count = [bi->objcArray count];
-                        if (count != 0) {
-                            ObjCInfo *obj_to_search = [[ObjCInfo alloc] init];
-                            obj_to_search->impAddr = addr;
-
-                            CFIndex objcMatch = CFArrayBSearchValues((CFArrayRef)bi->objcArray, CFRangeMake(0, count), obj_to_search, (CFComparatorFunction)CompareObjCInfos, NULL);
-                            [obj_to_search release];
-                            if (objcMatch >= count) {
-                                objcMatch = count - 1;
-                            }
-                            ObjCInfo *o = [bi->objcArray objectAtIndex:objcMatch];
-                            if (o->impAddr > addr) {
-                                o = (objcMatch == 0) ? nil : [bi->objcArray objectAtIndex:objcMatch - 1];
-                            }
-                            if (o != nil) {
-                                extra_string = [NSString stringWithFormat:@"\t// %@ + 0x%llx", o->name, addr - o->impAddr];
-                            }
-                        }
+                        extra_string = extractObjectiveCInfo(bi->header, bi->objcArray, addr);
                     }
                 }
 

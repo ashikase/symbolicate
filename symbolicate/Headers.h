@@ -25,6 +25,7 @@ typedef struct _VMURange {
 - (BOOL)isFromSharedCache;
 - (id)loadCommands;
 - (id)memory;
+- (id)path;
 - (id)segmentNamed:(id)named;
 @end
 @protocol VMUMemory <NSObject>
