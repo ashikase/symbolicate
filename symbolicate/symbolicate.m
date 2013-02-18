@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <mach-o/loader.h>
 
 #include "Headers.h"
+#include "localSymbols.h"
 
 #if !TARGET_IPHONE_SIMULATOR
 
@@ -325,6 +326,14 @@ finish:
 					VMUSymbol* sym = [bi->owner symbolForAddress:addr];
 					if (sym != nil) {
 						NSString* symname = [sym name];
+						if ([symname isEqualToString:@"<redacted>"] && hasHeaderFromSharedCacheWithPath) {
+							NSString *localName = nameForLocalSymbol([bi->header address], [sym addressRange].location);
+							if (localName != nil) {
+								symname = localName;
+							} else {
+								fprintf(stderr, "Unable to determine name for: %s, 0x%08llx\n", [bi->path UTF8String], [sym addressRange].location);
+							}
+						}
 						// check if this function should never cause crash (only hang).
 						if (isCrashing) {
 							if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [funcFilters containsObject:symname])

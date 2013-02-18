@@ -3,6 +3,7 @@ symbolicate_INSTALL_PATH = /usr/bin
 symbolicate_OBJC_FILES = \
     ../Common/common.c \
     ../Common/RegexKitLite.m \
+    localSymbols.mm \
     main.m \
     symbolicate.m
 symbolicate_CFLAGS = -I ../Common
