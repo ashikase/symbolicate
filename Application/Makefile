@@ -15,6 +15,7 @@ CrashReporter_FILES = \
     SuspectsViewController.m \
     find_dpkg.m \
     main.m \
+    move_as_root.m \
     pastie.m \
     reporter.m
 CrashReporter_CFLAGS = -I ../Common -I ../symbolicate

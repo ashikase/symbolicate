@@ -175,66 +175,16 @@ static NSString *escapeHTML(NSString *x, NSCharacterSet *escSet) {
     }
 }
 
-static const char *move_as_root_path() {
-    static char move_as_root_path_[64] = {0};
-    if (move_as_root_path_[0] == '\0') {
-        [[[NSBundle mainBundle] pathForResource:@"move_as_root" ofType:nil] getCString:move_as_root_path_
-            maxLength:sizeof(move_as_root_path_)
-            encoding:NSUTF8StringEncoding];
-    }
-    return move_as_root_path_;
-}
-
-void exec_move_as_root(const char *from, const char *to, const char *rem) {
-    pid_t pid = fork();
-    const char *path = move_as_root_path();
-    if (pid == 0) {
-        execl(path, path, from, to, rem, NULL);
-        _exit(0);
-    } else if (pid != -1) {
-        int stat_loc;
-        waitpid(pid, &stat_loc, 0);
-    }
-}
-
 NSString *symbolicate(NSString *file, id hudReply) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
-    NSBundle *mainBundle = [NSBundle mainBundle];
-    NSString *curPath = [[NSFileManager defaultManager] currentDirectoryPath];
-
     NSString *file_content = [[NSString alloc] initWithContentsOfFile:file encoding:NSUTF8StringEncoding error:NULL];
     if ([file_content length] == 0) {
-        const char *file_cstr = [[curPath stringByAppendingPathComponent:file] UTF8String];
-        int fds[2];
-        pipe(fds);
-        const char *marp = move_as_root_path();
-        pid_t pid = fork();
-        if (pid == 0) {
-            if (fds[1] != 1) {
-                dup2(fds[1], 1);
-                close(fds[1]);
-            }
-            close(fds[0]);
-            execl(marp, marp, file_cstr, NULL);
-            _exit(0);
-        } else if (pid != -1) {
-            close(fds[1]);
-            char buf[1024];
-            int actual_size;
-            NSMutableData *data = [[NSMutableData alloc] init];
-            while ((actual_size = read(fds[0], buf, 1024)) > 0) {
-                [data appendBytes:buf length:actual_size];
-            }
-            close(fds[0]);
-            file_content = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-            [data release];
-        }
-    }
-    if ([file_content length] == 0) {
         [file_content release];
-        return file;
+        return nil;
     }
+
+    NSBundle *mainBundle = [NSBundle mainBundle];
 
     NSMutableArray *file_lines = [[file_content componentsSeparatedByString:@"\n"] mutableCopy];
     [file_content release];

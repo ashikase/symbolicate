@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #import "CrashLogsFolderReader.h"
 #import "RegexKitLite.h"
 #include "common.h"
+#import "move_as_root.h"
 #import "symbolicate.h"
 
 static NSArray* crashPaths;
