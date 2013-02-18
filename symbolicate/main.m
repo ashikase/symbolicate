@@ -22,24 +22,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #import "symbolicate.h"
 #include <string.h>
 
-int main (int argc, char* argv[]) {
-	NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
-
-	int rv = 0;
+int main (int argc, char *argv[]) {
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
 #if !TARGET_IPHONE_SIMULATOR
-	if (argc > 2 && strcmp(argv[1], "-s") == 0) {
-
-		NSString* file = [NSString stringWithUTF8String:argv[2]];
-		NSString* res = symbolicate(file, nil);
-
-		printf("Result written to %s.\n", [res UTF8String]);
-
-	}
+    if (argc > 2 && strcmp(argv[1], "-s") == 0) {
+        NSString *file = [NSString stringWithUTF8String:argv[2]];
+        NSString *res = symbolicate(file, nil);
+        printf("Result written to %s.\n", [res UTF8String]);
+    }
 #endif
 
-	[pool drain];
-	return rv;
+    [pool drain];
+    return 0;
 }
 
 /* vim: set ft=objc ff=unix sw=4 ts=4 tw=80 expandtab: */
