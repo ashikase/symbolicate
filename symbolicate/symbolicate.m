@@ -30,63 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <objc/runtime.h>
 #include <mach-o/loader.h>
 
-@interface VMUAddressRange : NSObject <NSCoding> @end
-@interface VMUArchitecture : NSObject <NSCoding, NSCopying>
-+ (id)currentArchitecture;
-@end
-@interface VMUHeader : NSObject
-+ (id)extractMachOHeadersFromHeader:(id)header matchingArchitecture:(id)architecture considerArchives:(BOOL)archives;
-@end
-@interface VMULoadCommand : NSObject @end
-@interface VMUMachOHeader : VMUHeader
-- (BOOL)isFromSharedCache;
-- (id)loadCommands;
-- (id)memory;
-- (id)segmentNamed:(id)named;
-@end
-@protocol VMUMemory <NSObject>
-- (id)view;
-@end
-@protocol VMUMemoryView <NSObject>
-- (void)advanceCursor:(unsigned long long)cursor;
-- (unsigned long long)cursor;
-- (void)setCursor:(unsigned long long)cursor;
-- (id)stringWithEncoding:(unsigned)encoding;
-- (unsigned)uint32;
-@end
-@interface VMUMemory_Base : NSObject @end
-@interface VMUMemory_File : VMUMemory_Base <VMUMemory>
-+ (id)headerFromSharedCacheWithPath:(id)path;
-+ (id)headerWithPath:(id)path;
-@end
-typedef struct _VMURange {
-	unsigned long long location;
-	unsigned long long length;
-} VMURange;
-@interface VMUSourceInfo : VMUAddressRange <NSCopying>
-- (unsigned)lineNumber;
-- (id)path;
-@end
-@interface VMUSection : NSObject
-- (unsigned)offset;
-- (unsigned long long)size;
-@end
-@interface VMUSegmentLoadCommand : VMULoadCommand
-- (unsigned long long)fileoff;
-- (id)sectionNamed:(id)named;
-- (unsigned long long)vmaddr;
-@end
-@interface VMUSymbol : VMUAddressRange <NSCopying>
-- (VMURange)addressRange;
-- (id)name;
-@end
-@interface VMUSymbolExtractor : NSObject
-+ (id)extractSymbolOwnerFromHeader:(id)header;
-@end
-@interface VMUSymbolOwner : NSObject <NSCopying>
-- (id)sourceInfoForAddress:(unsigned long long)address;
-- (id)symbolForAddress:(unsigned long long)address;
-@end
+#include "Headers.h"
 
 #if !TARGET_IPHONE_SIMULATOR
 
@@ -316,7 +260,7 @@ finish:
 						header = [VMUMemory_File headerFromSharedCacheWithPath:matches[2]];
 					if (header == nil)
 						header = [VMUMemory_File headerWithPath:matches[2]];
-					header = [[VMUHeader extractMachOHeadersFromHeader:header matchingArchitecture:[VMUArchitecture currentArchitecture] considerArchives:NO] lastObject];
+						header = [[VMUHeader extractMachOHeadersFromHeader:header matchingArchitecture:[VMUArchitecture currentArchitecture] considerArchives:NO] lastObject];
 
 					if (header != nil) {
 						bi = [[BinaryInfo alloc] init];
