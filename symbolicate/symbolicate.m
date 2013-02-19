@@ -205,9 +205,7 @@ NSString *symbolicate(NSString *content, id hudReply) {
 
         switch (mode) {
             case SM_CheckingMode:
-                if ([line hasPrefix:@"Thread 0"]) {
-                    mode = SM_BacktraceMode;
-                } else if (isBinaryImage) {
+                if (isBinaryImage) {
                     goto finish;
                 } else if ([line hasPrefix:@"Exception Type:"]) {
                     NSUInteger lastCloseParenthesis = [line rangeOfString:@")" options:NSBackwardsSearch].location;
@@ -221,8 +219,11 @@ NSString *symbolicate(NSString *content, id hudReply) {
                         }
                     }
                     break;
-                } else {
+                } else if (![line hasPrefix:@"Thread 0"]) {
                     break;
+                } else {
+                    // Start of thread 0; fall-through to next case.
+                    mode = SM_BacktraceMode;
                 }
 
             case SM_BacktraceMode:
