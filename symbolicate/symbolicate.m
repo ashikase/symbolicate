@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 enum SymbolicationMode {
     SM_CheckingMode,
+    SM_ExceptionMode,
     SM_BacktraceMode,
     SM_BinaryImageMode,
 };
@@ -217,6 +218,9 @@ NSString *symbolicate(NSString *content, id hudReply) {
                         }
                     }
                     break;
+                } else if ([line hasPrefix:@"Last Exception Backtrace:"]) {
+                    mode = SM_ExceptionMode;
+                    break;
                 } else if (![line hasPrefix:@"Thread 0"]) {
                     break;
                 } else {
@@ -247,6 +251,32 @@ NSString *symbolicate(NSString *content, id hudReply) {
                     }
                 }
                 break;
+
+            case SM_ExceptionMode: {
+                mode = SM_CheckingMode;
+
+                NSUInteger lastCloseParenthesis = [line rangeOfString:@")" options:NSBackwardsSearch].location;
+                if (lastCloseParenthesis != NSNotFound) {
+                    NSRange range = NSMakeRange(0, lastCloseParenthesis);
+                    NSUInteger firstOpenParenthesis = [line rangeOfString:@"(" options:0 range:range].location;
+                    if (firstOpenParenthesis < lastCloseParenthesis) {
+                        range = NSMakeRange(firstOpenParenthesis + 1, lastCloseParenthesis - firstOpenParenthesis - 1);
+                        NSArray *array = [[line substringWithRange:range] componentsSeparatedByString:@" "];
+                        for (NSString *address in array) {
+                            BacktraceInfo *bti = [[BacktraceInfo alloc] init];
+                            // bti->binary = matches[0];
+                            bti->start_address = 0;
+                            bti->address = convertHexStringToLongLong([address UTF8String], [address length]);
+                            [extraInfoArray addObject:bti];
+                            [bti release];
+
+                            [outputLines addObject:[NSNull null]];
+                        }
+                        continue;
+                    }
+                }
+                break;
+            }
 
             case SM_BinaryImageMode: {
                 NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +](.+?) arm\\w*  (?:&lt;[0-9a-f]{32}&gt; )?(.+)$"];
