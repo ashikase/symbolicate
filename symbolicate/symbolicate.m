@@ -79,8 +79,8 @@ static CFComparisonResult CompareObjCInfos(ObjCInfo *a, ObjCInfo *b) {
 }
 
 // NOTE: The code for this function was copied from MachO_File of the Peace project.
-static NSString *extractObjectiveCInfo(VMUMachOHeader *header, NSArray *inputArray, unsigned long long address) {
-    NSString *string = nil;
+static ObjCInfo *extractObjectiveCInfo(VMUMachOHeader *header, NSArray *inputArray, unsigned long long address) {
+    ObjCInfo *objcInfo = nil;
 
     NSMutableArray *array = [inputArray mutableCopy];
     if (array == nil) {
@@ -144,24 +144,22 @@ static NSString *extractObjectiveCInfo(VMUMachOHeader *header, NSArray *inputArr
 
     CFIndex count = [array count];
     if (count != 0) {
-        ObjCInfo *obj_to_search = [[ObjCInfo alloc] init];
-        obj_to_search->impAddr = address;
+        ObjCInfo *info = [[ObjCInfo alloc] init];
+        info->impAddr = address;
 
-        CFIndex objcMatch = CFArrayBSearchValues((CFArrayRef)array, CFRangeMake(0, count), obj_to_search, (CFComparatorFunction)CompareObjCInfos, NULL);
-        [obj_to_search release];
+        CFIndex objcMatch = CFArrayBSearchValues((CFArrayRef)array, CFRangeMake(0, count), info, (CFComparatorFunction)CompareObjCInfos, NULL);
+        [info release];
         if (objcMatch >= count) {
             objcMatch = count - 1;
         }
-        ObjCInfo *o = [array objectAtIndex:objcMatch];
-        if (o->impAddr > address) {
-            o = (objcMatch == 0) ? nil : [array objectAtIndex:objcMatch - 1];
-        }
-        if (o != nil) {
-            string = [NSString stringWithFormat:@"\t// %@ + 0x%llx", o->name, address - o->impAddr];
+
+        objcInfo = [array objectAtIndex:objcMatch];
+        if (objcInfo->impAddr > address) {
+            objcInfo = (objcMatch == 0) ? nil : [array objectAtIndex:objcMatch - 1];
         }
     }
 
-    return string;
+    return objcInfo;
 }
 
 static NSString *escapeHTML(NSString *x, NSCharacterSet *escSet) {
@@ -461,7 +459,10 @@ finish:;
                         lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", escapeHTML(name, escSet), address - [symbol addressRange].location];
                     } else if (!bi->encrypted) {
                         // Try to extract some ObjC info.
-                        lineComment = extractObjectiveCInfo(bi->header, bi->objcArray, address);
+                        ObjCInfo *info = extractObjectiveCInfo(bi->header, bi->objcArray, address);
+                        if (info != nil) {
+                            lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", info->name, address - info->impAddr];
+                        }
                     }
                 }
                 if (lineComment != nil) {
