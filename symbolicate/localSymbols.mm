@@ -54,7 +54,7 @@ NSString *nameForLocalSymbol(uint32_t dylibOffset, uint32_t symbolAddress) {
         return nil;
     }
 
-    ssize_t headerSize = sizeof(dyld_cache_header);
+    size_t headerSize = sizeof(dyld_cache_header);
     dyld_cache_header *header = reinterpret_cast<dyld_cache_header *>(malloc(headerSize));
     if (read(fd, header, headerSize) < 0) {
         fprintf(stderr, "Failed to read the shared cache header.\n");
