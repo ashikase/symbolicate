@@ -1,7 +1,6 @@
 APPLICATION_NAME = CrashReporter
+CrashReporter_SUBPROJECTS = ../Common
 CrashReporter_FILES = \
-    ../Common/common.c \
-    ../Common/RegexKitLite.m \
     ../symbolicate/localSymbols.mm \
     ../symbolicate/symbolicate.m \
     BlameController.m \

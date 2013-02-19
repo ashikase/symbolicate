@@ -1,8 +1,7 @@
 TOOL_NAME = symbolicate
+symbolicate_SUBPROJECTS = ../Common
 symbolicate_INSTALL_PATH = /usr/bin
 symbolicate_OBJC_FILES = \
-    ../Common/common.c \
-    ../Common/RegexKitLite.m \
     localSymbols.mm \
     main.m \
     symbolicate.m
