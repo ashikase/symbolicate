@@ -194,6 +194,7 @@ NSString *symbolicate(NSString *content, id hudReply) {
     enum SymbolicationMode mode = SM_CheckingMode;
     NSMutableArray *extraInfoArray = [[NSMutableArray alloc] init];
     NSMutableDictionary *binaryImages = [[NSMutableDictionary alloc] init];
+    BOOL hasLastExceptionBacktrace = NO;
     BOOL isFilteredSignal = YES;
 
     for (NSString *line in inputLines) {
@@ -219,6 +220,7 @@ NSString *symbolicate(NSString *content, id hudReply) {
                     }
                     break;
                 } else if ([line hasPrefix:@"Last Exception Backtrace:"]) {
+                    hasLastExceptionBacktrace = YES;
                     mode = SM_ExceptionMode;
                     break;
                 } else if (![line hasPrefix:@"Thread 0"]) {
@@ -304,6 +306,24 @@ finish:;
 
     Ivar _command_ivar = class_getInstanceVariable([VMULoadCommand class], "_command");
 
+    // Prepare array of image start addresses for determining symbols of exception.
+    NSArray *imageStartAddresses = nil;
+    if (hasLastExceptionBacktrace) {
+        NSMutableArray *array = [[NSMutableArray alloc] init];
+        for (NSString *key in [binaryImages allKeys]) {
+            NSScanner *scanner = [[NSScanner alloc] initWithString:key];
+            unsigned long long startAddress = 0;
+            if ([scanner scanHexLongLong:&startAddress]) {
+                NSNumber *number = [[NSNumber alloc] initWithUnsignedLongLong:startAddress];
+                [array addObject:number];
+                [number release];
+            }
+            [scanner release];
+        }
+        imageStartAddresses = [array sortedArrayUsingSelector:@selector(compare:)];
+        [array release];
+    }
+
     for (BacktraceInfo *bti in extraInfoArray) {
 #if 0
         int this_percent = MIN(100, 200 * i / total_lines);
@@ -318,6 +338,18 @@ finish:;
         } else if (bti == (id)kCFBooleanFalse) {
             isCrashing = NO;
         } else if (bti != (id)kCFNull) {
+            // Determine start address for this backtrace line.
+            if (bti->start_address == 0) {
+                for (NSNumber *number in [imageStartAddresses reverseObjectEnumerator]) {
+                    unsigned long long startAddress = [number unsignedLongLongValue];
+                    if (bti->address > startAddress) {
+                        bti->start_address = [NSString stringWithFormat:@"%llx", startAddress];
+                        break;
+                    }
+                }
+            }
+
+            // Retrieve info for related binary image.
             BinaryInfo *bi = [binaryImages objectForKey:bti->start_address];
             if (bi != nil) {
                 // NOTE: If image has not been processed yet, type will be NSArray.
@@ -431,7 +463,11 @@ finish:;
                 }
 
                 if (lineComment != nil) {
-                    NSString *newLine = [[outputLines objectAtIndex:i] stringByAppendingString:lineComment];
+                    NSString *oldLine = [outputLines objectAtIndex:i];
+                    if (oldLine == (id)kCFNull) {
+                        oldLine = @"";
+                    }
+                    NSString *newLine = [oldLine stringByAppendingString:lineComment];
                     [outputLines replaceObjectAtIndex:i withObject:newLine];
                 }
             }
