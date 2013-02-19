@@ -290,10 +290,15 @@ finish:;
         } else if (bti != (id)kCFNull) {
             BinaryInfo *bi = [binaryImages objectForKey:bti->start_address];
             if (bi != nil) {
+                // NOTE: If image has not been processed yet, type will be NSArray.
                 if (![bi isKindOfClass:$BinaryInfo]) {
+                    // NOTE: Binary images are only processed as needed. Most
+                    //       likely only a small number of images were being
+                    //       called into at the time of the crash.
                     NSString *matches[3];
                     [(NSArray *)bi getObjects:matches range:NSMakeRange(1, 3)];
 
+                    // Get Mach-O header for the image
                     VMUMachOHeader *header = nil;
                     if (hasHeaderFromSharedCacheWithPath) {
                         header = [VMUMemory_File headerFromSharedCacheWithPath:matches[2]];
@@ -304,8 +309,8 @@ finish:;
                     if (![header isKindOfClass:[VMUMachOHeader class]]) {
                         header = [[VMUHeader extractMachOHeadersFromHeader:header matchingArchitecture:[VMUArchitecture currentArchitecture] considerArchives:NO] lastObject];
                     }
-
                     if (header != nil) {
+                        // Create a BinaryInfo object for the image
                         bi = [[BinaryInfo alloc] init];
                         unsigned long long start = convertHexStringToLongLong([matches[0] UTF8String], [matches[0] length]);
                         unsigned long long textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
