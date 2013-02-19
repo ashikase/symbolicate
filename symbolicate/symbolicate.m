@@ -426,16 +426,17 @@ finish:;
                     }
                 }
 
+                // Add source/symbol information to the end of the output line.
                 NSString *lineComment = nil;
                 unsigned long long address = bti->address + bi->slide;
-
                 VMUSourceInfo *srcInfo = [bi->owner sourceInfoForAddress:address];
                 if (srcInfo != nil) {
+                    // Add source file name and line number.
                     lineComment = [NSString stringWithFormat:@"\t// %@:%u", escapeHTML([srcInfo path], escSet), [srcInfo lineNumber]];
                 } else {
+                    // Attempt to add symbol name and hex offset.
                     VMUSymbol *symbol = [bi->owner symbolForAddress:address];
                     if (symbol != nil) {
-                        // Determine name of symbol
                         NSString *name = [symbol name];
                         if ([name isEqualToString:@"<redacted>"] && hasHeaderFromSharedCacheWithPath) {
                             NSString *localName = nameForLocalSymbol([bi->header address], [symbol addressRange].location);
@@ -445,10 +446,12 @@ finish:;
                                 fprintf(stderr, "Unable to determine name for: %s, 0x%08llx\n", [bi->path UTF8String], [symbol addressRange].location);
                             }
                         }
+                        // FIXME: Where does this actually belong?
                         if (isCrashing) {
                             // Check if this function should never cause crash (only hang).
-                            if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [functionFilters containsObject:name])
+                            if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [functionFilters containsObject:name]) {
                                 isCrashing = NO;
+                            }
                         } else if (!isCrashing) {
                             // Check if this function is actually causing crash.
                             if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [reverseFilters containsObject:name]) {
@@ -461,7 +464,6 @@ finish:;
                         lineComment = extractObjectiveCInfo(bi->header, bi->objcArray, address);
                     }
                 }
-
                 if (lineComment != nil) {
                     NSString *oldLine = [outputLines objectAtIndex:i];
                     if (oldLine == (id)kCFNull) {
