@@ -60,6 +60,7 @@ enum SymbolicationMode {
         NSString *path;
         NSUInteger line;
         BOOL encrypted;
+        BOOL blamable;
 }
 @end
 @implementation BinaryInfo @end
@@ -306,7 +307,6 @@ finish:;
 
                     if (header != nil) {
                         bi = [[BinaryInfo alloc] init];
-
                         unsigned long long start = convertHexStringToLongLong([matches[0] UTF8String], [matches[0] length]);
                         unsigned long long textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
                         bi->slide = textStart - start;
@@ -314,10 +314,30 @@ finish:;
                         bi->header = header;
                         bi->path = matches[2];
                         bi->line = 0;
+                        bi->blamable = YES;
                         for (VMULoadCommand *lc in [header loadCommands]) {
                             if ((int)object_getIvar(lc, _command_ivar) == LC_ENCRYPTION_INFO) {
                                 bi->encrypted = YES;
                                 break;
+                            }
+                        }
+
+                        // Determine if binary image should not be blamed.
+                        if (hasHeaderFromSharedCacheWithPath && [bi->header isFromSharedCache]) {
+                            // Don't blame anything from the shared cache.
+                            bi->blamable = NO;
+                        } else {
+                            // Don't blame white-listed libraries.
+                            if ([filters containsObject:bi->path]) {
+                                bi->blamable = NO;
+                            } else {
+                                // Don't blame white-listed folders.
+                                for (NSString *prefix in prefixFilters) {
+                                    if ([bi->path hasPrefix:prefix]) {
+                                        bi->blamable = NO;
+                                        break;
+                                    }
+                                }
                             }
                         }
 
@@ -329,34 +349,16 @@ finish:;
                     }
                 }
 
-                // Try to blame the BinaryInfo.
-                if (bi->line == 0 || (bi->line != ~0u && (bi->line & 0x80000000) && isCrashing)) {
-                    // Don't blame system libraries.
-                    if (!(hasHeaderFromSharedCacheWithPath && [bi->header isFromSharedCache])) {
-                        // Don't blame white-listed libraries.
-                        if ([filters containsObject:bi->path]) {
-                            bi->line = ~0u;
-                        } else {
-                            // Don't blame white-listed folders.
-                            for (NSString *prefix in prefixFilters) {
-                                if ([bi->path hasPrefix:prefix]) {
-                                    bi->line = ~0u;
-                                    goto dont_blame;
-                                }
-                            }
-                            // Blame.
-                            bi->line = i;
-                            // Make it a secondary suspect if it isn't in the crashing thread.
-                            if (!isCrashing) {
-                                bi->line |= 0x80000000;
-                            }
-                        }
-                    } else {
-                        bi->line = ~0u;
+                // Determine if binary image should be blamed.
+                if (bi->blamable && (bi->line == 0 || ((bi->line & 0x80000000) && isCrashing))) {
+                    // Blame.
+                    bi->line = i;
+                    // Make it a secondary suspect if it isn't in the crashing thread.
+                    if (!isCrashing) {
+                        bi->line |= 0x80000000;
                     }
                 }
 
-dont_blame:;
                 NSString *lineComment = nil;
                 unsigned long long address = bti->address + bi->slide;
 
@@ -425,7 +427,7 @@ found_nothing:
     if (isFilteredSignal) {
         for (NSString *name in binaryImages) {
             BinaryInfo *bi = [binaryImages objectForKey:name];
-            if ([bi isKindOfClass:$BinaryInfo] && bi->line != ~0u) {
+            if ([bi isKindOfClass:$BinaryInfo] && bi->blamable) {
                 [blameInfo appendFormat:@"<array><string>%@</string><integer>%d</integer></array>\n", escapeHTML(bi->path, escSet), bi->line];
             }
         }
