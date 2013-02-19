@@ -54,6 +54,7 @@ enum SymbolicationMode {
 @interface BinaryInfo : NSObject {
     @package
         // slide = text address - actual address
+        unsigned long long address;
         long long slide;
         VMUSymbolOwner *owner;
         VMUMachOHeader *header;
@@ -296,6 +297,7 @@ finish:;
     NSCharacterSet *escSet = [NSCharacterSet characterSetWithCharactersInString:@"<>&"];
 
     NSUInteger i = 0;
+    NSUInteger exceptionStackDepth = 0;
     BOOL isCrashing = NO;
     BOOL hasHeaderFromSharedCacheWithPath = [VMUMemory_File respondsToSelector:@selector(headerFromSharedCacheWithPath:)];
     Class $BinaryInfo = [BinaryInfo class];
@@ -372,9 +374,9 @@ finish:;
                     if (header != nil) {
                         // Create a BinaryInfo object for the image
                         bi = [[BinaryInfo alloc] init];
-                        unsigned long long start = convertHexStringToLongLong([matches[0] UTF8String], [matches[0] length]);
+                        bi->address = convertHexStringToLongLong([matches[0] UTF8String], [matches[0] length]);
                         unsigned long long textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
-                        bi->slide = textStart - start;
+                        bi->slide = textStart - bi->address;
                         bi->owner = [VMUSymbolExtractor extractSymbolOwnerFromHeader:header];
                         bi->header = header;
                         bi->path = matches[2];
@@ -422,6 +424,16 @@ finish:;
                     if (!isCrashing) {
                         bi->line |= 0x80000000;
                     }
+                }
+
+                // If line is from exception, add path and address info.
+                id currentLine = [outputLines objectAtIndex:i];
+                if (currentLine == (id)kCFNull) {
+                    NSString *newLine = [[NSString alloc] initWithFormat:@"%u\t%-30s\t0x%08llx 0x%llx + %llu",
+                             exceptionStackDepth, [[bi->path lastPathComponent] UTF8String], bi->address, bti->address, bti->address - bi->address];
+                    [outputLines replaceObjectAtIndex:i withObject:newLine];
+                    [newLine release];
+                    ++exceptionStackDepth;
                 }
 
                 // Add source/symbol information to the end of the output line.
