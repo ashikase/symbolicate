@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
                 if (result != nil) {
                     if (outputFile != NULL) {
                         NSString *path = [NSString stringWithUTF8String:outputFile];
-                        [content writeToFile:path atomically:NO encoding:NSUTF8StringEncoding error:NULL];
+                        [result writeToFile:path atomically:NO encoding:NSUTF8StringEncoding error:NULL];
                         printf("Result written to %s.\n", outputFile);
                     } else {
                         printf("%s\n", [result UTF8String]);
