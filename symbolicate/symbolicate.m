@@ -179,7 +179,8 @@ static NSString *escapeHTML(NSString *x, NSCharacterSet *escSet) {
 NSString *symbolicate(NSString *content, id hudReply) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
-    NSMutableArray *contentLines = [[content componentsSeparatedByString:@"\n"] mutableCopy];
+    NSArray *inputLines = [content componentsSeparatedByString:@"\n"];
+    NSMutableArray *outputLines = [[NSMutableArray alloc] init];
 
     NSDictionary *whiteListFile = [[NSDictionary alloc] initWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"whitelist" ofType:@"plist"]];
     NSSet *filters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"Filters"]];
@@ -194,20 +195,17 @@ NSString *symbolicate(NSString *content, id hudReply) {
     NSMutableDictionary *binaryImages = [[NSMutableDictionary alloc] init];
     BOOL isFilteredSignal = YES;
 
-    for (NSString *line in contentLines) {
+    for (NSString *line in inputLines) {
         // extraInfo:
         //   - true = start of crashing thread.
         //   - false = start of non-crashing thread.
         //   - BacktraceInfo = backtrace info :)
         //   - null = irrelevant.
         id extraInfo = [NSNull null];
-        BOOL isBinaryImage = [line isEqualToString:@"Binary Images:"];
 
         switch (mode) {
             case SM_CheckingMode:
-                if (isBinaryImage) {
-                    goto finish;
-                } else if ([line hasPrefix:@"Exception Type:"]) {
+                if ([line hasPrefix:@"Exception Type:"]) {
                     NSUInteger lastCloseParenthesis = [line rangeOfString:@")" options:NSBackwardsSearch].location;
                     if (lastCloseParenthesis != NSNotFound) {
                         NSRange range = NSMakeRange(0, lastCloseParenthesis);
@@ -227,7 +225,7 @@ NSString *symbolicate(NSString *content, id hudReply) {
                 }
 
             case SM_BacktraceMode:
-                if (isBinaryImage) {
+                if ([line isEqualToString:@"Binary Images:"]) {
                     mode = SM_BinaryImageMode;
                 } else if ([line length] > 0) {
                     if ([line hasSuffix:@"Crashed:"]) {
@@ -260,6 +258,7 @@ NSString *symbolicate(NSString *content, id hudReply) {
             }
         }
 
+        [outputLines addObject:line];
         [extraInfoArray addObject:extraInfo];
     }
 
@@ -402,8 +401,8 @@ finish:;
                 }
 
                 if (lineComment != nil) {
-                    NSString *newLine = [[contentLines objectAtIndex:i] stringByAppendingString:lineComment];
-                    [contentLines replaceObjectAtIndex:i withObject:newLine];
+                    NSString *newLine = [[outputLines objectAtIndex:i] stringByAppendingString:lineComment];
+                    [outputLines replaceObjectAtIndex:i withObject:newLine];
                 }
             }
         }
@@ -439,13 +438,13 @@ found_nothing:
         }
     }
     [blameInfo appendString:@"</array>"];
-    [contentLines insertObject:blameInfo atIndex:[contentLines count] - 3];
+    [outputLines insertObject:blameInfo atIndex:[outputLines count] - 3];
     [binaryImages release];
 
     [pool drain];
 
-    [contentLines autorelease];
-    return [contentLines componentsJoinedByString:@"\n"];
+    [outputLines autorelease];
+    return [outputLines componentsJoinedByString:@"\n"];
 }
 
 /* vim: set ft=objc ff=unix sw=4 ts=4 tw=80 expandtab: */
