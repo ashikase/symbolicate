@@ -137,7 +137,10 @@ static ObjCInfo *extractObjectiveCInfo(VMUMachOHeader *header, NSArray *inputArr
                 [mem setCursor:old_location];
             }
         } @catch (NSException *exception) {
-            NSLog(@"Warning: Exception '%@' generated when extracting Objective-C info for %@.", exception, [header path]);
+#if DEBUG
+            fprintf(stderr, "Warning: Exception '%s' generated when extracting Objective-C info for %s.\n",
+                    [[exception reason] UTF8String], [[header path] UTF8String]);
+#endif
         }
 
         [array sortUsingFunction:(void *)CompareObjCInfos context:NULL];
