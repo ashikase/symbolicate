@@ -29,6 +29,10 @@ void print_usage() {
             "\n"
             "Options:\n"
             "    -o <file>  Write output to file instead of to stdout.\n"
+            "    -n <step>  Send notifications of progress via notify_post().\n"
+            "               The notification name is \""PKG_ID".progress\".\n"
+            "               Progress percentage is obtainable via notify_get_state().\n"
+            "               Step value can be any integer 1-100.\n"
             "\n"
            );
 }
@@ -42,12 +46,16 @@ int main(int argc, char *argv[]) {
         print_usage();
     } else {
         const char *outputFile = NULL;
+        unsigned progressStepping = 0;
 
         int c;
-        while ((c = getopt (argc, argv, "o:")) != -1) {
+        while ((c = getopt (argc, argv, "o:n:")) != -1) {
             switch (c) {
                 case 'o':
                     outputFile = optarg;
+                    break;
+                case 'n':
+                    progressStepping = atoi(optarg);
                     break;
                 default:
                     break;
@@ -61,7 +69,7 @@ int main(int argc, char *argv[]) {
             NSString *filepath = [NSString stringWithUTF8String:inputFile];
             NSString *content = [NSString stringWithContentsOfFile:filepath encoding:NSUTF8StringEncoding error:NULL];
             if (content != nil) {
-                NSString *result = symbolicate(content, nil);
+                NSString *result = symbolicate(content, progressStepping);
                 if (result != nil) {
                     if (outputFile != NULL) {
                         NSString *path = [NSString stringWithUTF8String:outputFile];

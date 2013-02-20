@@ -1,4 +1,6 @@
 TOOL_NAME = symbolicate
+PKG_ID = jp.ashikase.symbolicate
+
 symbolicate_INSTALL_PATH = /usr/bin
 symbolicate_OBJC_FILES = \
     common.c\
@@ -8,6 +10,7 @@ symbolicate_OBJC_FILES = \
     symbolicate.m
 symbolicate_LDFLAGS = -licucore
 symbolicate_PRIVATE_FRAMEWORKS = Symbolication
+ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\"
 
 TARGET = iphone:3.0
 ARCHS =

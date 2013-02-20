@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #import <Foundation/Foundation.h>
 #include <mach-o/loader.h>
 #include <objc/runtime.h>
+#include <notify.h>
 #include <stdlib.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -179,11 +180,12 @@ static NSString *escapeHTML(NSString *x, NSCharacterSet *escSet) {
     }
 }
 
-NSString *symbolicate(NSString *content, id hudReply) {
+NSString *symbolicate(NSString *content, unsigned progressStepping) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
     NSArray *inputLines = [content componentsSeparatedByString:@"\n"];
     NSMutableArray *outputLines = [[NSMutableArray alloc] init];
+    BOOL shouldNotifyOfProgress = (progressStepping > 0 && progressStepping < 100);
 
     NSDictionary *whiteListFile = [[NSDictionary alloc] initWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"whitelist" ofType:@"plist"]];
     NSSet *filters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"Filters"]];
@@ -304,8 +306,8 @@ NSString *symbolicate(NSString *content, id hudReply) {
     BOOL isCrashing = NO;
     BOOL hasHeaderFromSharedCacheWithPath = [VMUMemory_File respondsToSelector:@selector(headerFromSharedCacheWithPath:)];
     Class $BinaryInfo = [BinaryInfo class];
-    //NSUInteger total_lines = [extraInfoArray count];
-    //int last_percent = 0;
+    NSUInteger total_lines = [extraInfoArray count];
+    int last_percent = 0;
 
     Ivar _command_ivar = class_getInstanceVariable([VMULoadCommand class], "_command");
 
@@ -324,13 +326,16 @@ NSString *symbolicate(NSString *content, id hudReply) {
     }
 
     for (BacktraceInfo *bti in extraInfoArray) {
-#if 0
-        int this_percent = MIN(100, 200 * i / total_lines);
-        if (this_percent != last_percent) {
-            last_percent = this_percent;
-            [hudReply updateText:[NSString stringWithFormat:symbolicating, this_percent]];
-        }
-#endif
+         if (shouldNotifyOfProgress) {
+             int this_percent = MIN(100, 200 * i / total_lines);
+             if (this_percent - last_percent >= progressStepping) {
+                 last_percent = this_percent;
+                 int token;
+                 notify_register_check(PKG_ID".progress", &token);
+                 notify_set_state(token, this_percent);
+                 notify_post(PKG_ID".progress");
+             }
+         }
 
         if (bti == (id)kCFBooleanTrue) {
             isCrashing = YES;

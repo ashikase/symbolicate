@@ -18,8 +18,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-@class NSString, ModalActionSheet;
+@class NSString;
 
-NSString *symbolicate(NSString *content, ModalActionSheet *hud);
+NSString *symbolicate(NSString *content, unsigned progressStepping);
 
 /* vim: set ft=objc ff=unix sw=4 ts=4 tw=80 expandtab: */
