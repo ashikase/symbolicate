@@ -314,14 +314,10 @@ NSString *symbolicate(NSString *content, id hudReply) {
     if (hasLastExceptionBacktrace) {
         NSMutableArray *array = [[NSMutableArray alloc] init];
         for (NSString *key in [binaryImages allKeys]) {
-            NSScanner *scanner = [[NSScanner alloc] initWithString:key];
-            unsigned long long startAddress = 0;
-            if ([scanner scanHexLongLong:&startAddress]) {
-                NSNumber *number = [[NSNumber alloc] initWithUnsignedLongLong:startAddress];
-                [array addObject:number];
-                [number release];
-            }
-            [scanner release];
+            unsigned long long startAddress = convertHexStringToLongLong([key UTF8String], [key length]);
+            NSNumber *number = [[NSNumber alloc] initWithUnsignedLongLong:startAddress];
+            [array addObject:number];
+            [number release];
         }
         imageStartAddresses = [array sortedArrayUsingSelector:@selector(compare:)];
         [array release];
