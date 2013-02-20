@@ -456,6 +456,11 @@ NSString *symbolicate(NSString *content, id hudReply) {
                                 fprintf(stderr, "Unable to determine name for: %s, 0x%08llx\n", [bi->path UTF8String], [symbol addressRange].location);
                             }
                         }
+                        // Attempt to demangle name
+                        // NOTE: It seems that Apple's demangler fails for some
+                        //       names, so we attempt to do it ourselves.
+                        name = demangle(name);
+
                         // FIXME: Where does this actually belong?
                         if (isCrashing) {
                             // Check if this function should never cause crash (only hang).

@@ -82,15 +82,7 @@ NSString *nameForLocalSymbol(uint32_t dylibOffset, uint32_t symbolAddress) {
                     if (n->n_value == symbolAddress) {
                         if (n->n_un.n_strx != 0 && (n->n_type & N_STAB) == 0) {
                             const char *strings = reinterpret_cast<const char *>((uint32_t)localSymbols + localSymbols->stringsOffset);
-                            const char *mangled = strings + n->n_un.n_strx;
-                            if (strlen(mangled) > 0) {
-                                // NOTE: When attempting to demangle name, skip initial underscore.
-                                int status;
-                                char *demangled = abi::__cxa_demangle(mangled + 1, NULL, NULL, &status);
-                                name = [[NSString alloc] initWithCString:(demangled ?: mangled) encoding:NSASCIIStringEncoding];
-                                free(demangled);
-                                break;
-                            }
+                            name = [NSString stringWithCString:(strings + n->n_un.n_strx) encoding:NSASCIIStringEncoding];
                         }
                     }
                 }
@@ -102,7 +94,24 @@ NSString *nameForLocalSymbol(uint32_t dylibOffset, uint32_t symbolAddress) {
         fprintf(stderr, "Failed to mmap the shared cache.\n");
     }
 
-    return [name autorelease];
+    return name;
+}
+
+NSString *demangle(NSString *mangled) {
+    NSString *demangled = mangled;
+
+    const char *before = [mangled cStringUsingEncoding:NSASCIIStringEncoding];
+    if (strlen(before) > 0) {
+        // NOTE: When attempting to demangle name, skip initial underscore.
+        int status;
+        char *after = abi::__cxa_demangle(before + 1, NULL, NULL, &status);
+        if (after != NULL) {
+            demangled = [NSString stringWithCString:after encoding:NSASCIIStringEncoding];
+        }
+        free(after);
+    }
+
+    return demangled;
 }
 
 /* vim: set ft=objcpp ff=unix sw=4 ts=4 tw=80 expandtab: */
