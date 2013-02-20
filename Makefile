@@ -1,17 +1,23 @@
-SUBPROJECTS = Application move_as_root symbolicate
+TOOL_NAME = symbolicate
+symbolicate_INSTALL_PATH = /usr/bin
+symbolicate_OBJC_FILES = \
+    common.c\
+    localSymbols.mm \
+    main.m \
+    RegexKitLite.m \
+    symbolicate.m
+symbolicate_LDFLAGS = -licucore
+symbolicate_PRIVATE_FRAMEWORKS = Symbolication
 
-export ARCHS =
-
-#export SDKTARGET = arm-apple-darwin11
-#export TARGET_CXX = clang -ccc-host-triple $(SDKTARGET)
-#export TARGET_LD = $(SDKTARGET)-g++
-#export TARGET_CODESIGN_ALLOCATE=$(CODESIGN_ALLOCATE)
-
-#ADDITIONAL_FLAGS = -D__IPHONE_OS_VERSION_MIN_REQUIRED=__IPHONE_3_0
-ADDITIONAL_FLAGS = -miphoneos-version-min=3.0
+TARGET = iphone:3.0
+ARCHS =
+#SDKTARGET = arm-apple-darwin11
+#TARGET_CXX = clang -ccc-host-triple $(SDKTARGET)
+#TARGET_LD = $(SDKTARGET)-g++
+#TARGET_CODESIGN_ALLOCATE=$(CODESIGN_ALLOCATE)
 
 include theos/makefiles/common.mk
-include theos/makefiles/aggregate.mk
+include $(THEOS)/makefiles/tool.mk
 
 after-stage::
 	# Optimize png files
