@@ -281,10 +281,11 @@ NSString *symbolicate(NSString *content, id hudReply) {
 
             case SM_BinaryImageMode: {
                 NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +](.+?) arm\\w*  (?:&lt;[0-9a-f]{32}&gt; )?(.+)$"];
-                if ([array count] != 4) {
-                    goto finish;
+                if ([array count] == 4) {
+                    [binaryImages setObject:array forKey:[array objectAtIndex:1]];
+                } else {
+                    mode = SM_CheckingMode;
                 }
-                [binaryImages setObject:array forKey:[array objectAtIndex:1]];
                 break;
             }
         }
@@ -293,7 +294,6 @@ NSString *symbolicate(NSString *content, id hudReply) {
         [extraInfoArray addObject:extraInfo];
     }
 
-finish:;
     NSCharacterSet *escSet = [NSCharacterSet characterSetWithCharactersInString:@"<>&"];
 
     NSUInteger i = 0;
