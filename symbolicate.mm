@@ -180,7 +180,7 @@ static NSString *escapeHTML(NSString *x, NSCharacterSet *escSet) {
     }
 }
 
-NSString *symbolicate(NSString *content, unsigned progressStepping) {
+NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned progressStepping) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
     NSArray *inputLines = [content componentsSeparatedByString:@"\n"];
@@ -477,6 +477,14 @@ NSString *symbolicate(NSString *content, unsigned progressStepping) {
                                 }
                             }
                             lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", escapeHTML(name, escSet), address - [symbol addressRange].location];
+                        } else if (NSDictionary *map = [symbolMaps objectForKey:bi->path]) {
+                            for (NSNumber *number in [[[map allKeys] sortedArrayUsingSelector:@selector(compare:)] reverseObjectEnumerator]) {
+                                unsigned long long symbolAddress = [number unsignedLongLongValue];
+                                if (address > symbolAddress) {
+                                    lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", demangle([map objectForKey:number]), address - symbolAddress];
+                                    break;
+                                }
+                            }
                         } else if (!bi->encrypted) {
                             // Try to extract some ObjC info.
                             ObjCInfo *info = extractObjectiveCInfo(bi->header, bi->objcArray, address);

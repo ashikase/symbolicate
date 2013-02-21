@@ -7,7 +7,8 @@ symbolicate_OBJC_FILES = \
     localSymbols.mm \
     main.m \
     RegexKitLite.m \
-    symbolicate.mm
+    symbolicate.mm \
+    symbolMaps.m
 symbolicate_LDFLAGS = -licucore
 symbolicate_PRIVATE_FRAMEWORKS = Symbolication
 ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\"

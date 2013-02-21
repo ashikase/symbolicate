@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <getopt.h>
 #include <string.h>
 
+#import "symbolMaps.h"
 #import "symbolicate.h"
 
 void print_usage() {
@@ -28,11 +29,12 @@ void print_usage() {
             "Usage: symbolicate [<options>] <file>\n"
             "\n"
             "Options:\n"
-            "    -o <file>  Write output to file instead of to stdout.\n"
-            "    -n <step>  Send notifications of progress via notify_post().\n"
-            "               The notification name is \""PKG_ID".progress\".\n"
-            "               Progress percentage is obtainable via notify_get_state().\n"
-            "               Step value can be any integer 1-100.\n"
+            "    -o <file>         Write output to file instead of to stdout.\n"
+            "    -m <path,file>    Provide symbol map file for specified binary image path.\n"
+            "    -n <step>         Send notifications of progress via notify_post().\n"
+            "                      The notification name is \""PKG_ID".progress\".\n"
+            "                      Progress percentage is obtainable via notify_get_state().\n"
+            "                      Step value can be any integer 1-100.\n"
             "\n"
            );
 }
@@ -46,14 +48,24 @@ int main(int argc, char *argv[]) {
         print_usage();
     } else {
         const char *outputFile = NULL;
+        NSMutableDictionary *mapFiles = [NSMutableDictionary dictionary];
         unsigned progressStepping = 0;
 
         int c;
-        while ((c = getopt (argc, argv, "o:n:")) != -1) {
+        while ((c = getopt (argc, argv, "o:m:n:")) != -1) {
             switch (c) {
                 case 'o':
                     outputFile = optarg;
                     break;
+                case 'm': {
+                    char *path = strtok(optarg, ",");
+                    char *file = strtok(NULL, ",");
+                    if (path != NULL && file != NULL) {
+                        [mapFiles setObject:[NSString stringWithCString:file encoding:NSUTF8StringEncoding]
+                            forKey:[NSString stringWithCString:path encoding:NSUTF8StringEncoding]];
+                    }
+                    break;
+                }
                 case 'n':
                     progressStepping = atoi(optarg);
                     break;
@@ -69,7 +81,18 @@ int main(int argc, char *argv[]) {
             NSString *filepath = [NSString stringWithUTF8String:inputFile];
             NSString *content = [NSString stringWithContentsOfFile:filepath encoding:NSUTF8StringEncoding error:NULL];
             if (content != nil) {
-                NSString *result = symbolicate(content, progressStepping);
+                // Parse map files
+                NSMutableDictionary *symbolMaps = [NSMutableDictionary dictionary];
+                for (NSString *imagePath in mapFiles) {
+                    NSString *mapFile = [mapFiles objectForKey:imagePath];
+                    NSDictionary *result = parseMapFile(mapFile);
+                    if (result != nil) {
+                        [symbolMaps setObject:result forKey:imagePath];
+                    }
+                }
+
+                // Symbolicate input file
+                NSString *result = symbolicate(content, symbolMaps, progressStepping);
                 if (result != nil) {
                     if (outputFile != NULL) {
                         NSString *path = [NSString stringWithUTF8String:outputFile];
