@@ -517,12 +517,12 @@ NSString *symbolicate(NSString *content, unsigned progressStepping) {
     */
 
     // Write down blame info.
-    NSMutableString *blameInfo = [NSMutableString stringWithString:@"<key>blame</key><array>\n"];
+    NSMutableString *blameInfo = [NSMutableString stringWithString:@"<key>blame</key>\n<array>\n"];
     if (isFilteredSignal) {
         for (NSString *name in binaryImages) {
             BinaryInfo *bi = [binaryImages objectForKey:name];
             if ([bi isKindOfClass:$BinaryInfo] && bi->blamable) {
-                [blameInfo appendFormat:@"<array><string>%@</string><integer>%d</integer></array>\n", escapeHTML(bi->path, escSet), bi->line];
+                [blameInfo appendFormat:@"\t<array><string>%@</string><integer>%d</integer></array>\n", escapeHTML(bi->path, escSet), bi->line];
             }
         }
     }
