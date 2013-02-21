@@ -31,6 +31,7 @@ void print_usage() {
             "Options:\n"
             "    -o <file>         Write output to file instead of to stdout.\n"
             "    -m <path,file>    Provide symbol map file for specified binary image path.\n"
+            "                      If file ends with \".bz2\", bzip2 compression is assumed.\n"
             "    -n <step>         Send notifications of progress via notify_post().\n"
             "                      The notification name is \""PKG_ID".progress\".\n"
             "                      Progress percentage is obtainable via notify_get_state().\n"
@@ -88,6 +89,8 @@ int main(int argc, char *argv[]) {
                     NSDictionary *result = parseMapFile(mapFile);
                     if (result != nil) {
                         [symbolMaps setObject:result forKey:imagePath];
+                    } else {
+                        fprintf(stderr, "WARNING: Unable to read map file \"%s\".\n", [mapFile UTF8String]);
                     }
                 }
 

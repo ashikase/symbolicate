@@ -1,14 +1,49 @@
 #import "symbolMaps.h"
 
 #import "RegexKitLite.h"
+#include "bzlib.h"
 #include "common.h"
+
+static NSData *bunzip2(NSData *inputData) {
+    NSMutableData *outputData = [NSMutableData data];
+
+    const int bufSize = 4096;
+    NSMutableData *buf = [NSMutableData dataWithLength:bufSize];
+    bz_stream stream = {0};
+    stream.next_in = (char *)[inputData bytes];
+    stream.avail_in = [inputData length];
+
+    BZ2_bzDecompressInit(&stream, 0, 0);
+    int ret;
+    do {
+        stream.next_out = [buf mutableBytes];
+        stream.avail_out = bufSize;
+        ret = BZ2_bzDecompress(&stream);
+        if (ret != BZ_OK && ret != BZ_STREAM_END) {
+            break;
+        }
+        [outputData appendBytes:[buf bytes] length:(bufSize - stream.avail_out)];
+    } while (ret != BZ_STREAM_END);
+    BZ2_bzDecompressEnd(&stream);
+
+    return outputData;
+}
 
 NSDictionary *parseMapFile(NSString *mapFile) {
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
 
-    NSData *data = [[NSData alloc] initWithContentsOfFile:mapFile];
-    NSString *content = [[NSString alloc] initWithData:data encoding:NSASCIIStringEncoding];
-    [data release];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:mapFile]) {
+        return nil;
+    }
+
+    NSString *content = nil;
+    if ([[mapFile pathExtension] isEqualToString:@"bz2"]) {
+        NSData *data = [[NSData alloc] initWithContentsOfFile:mapFile];
+        content = [[NSString alloc] initWithData:bunzip2(data) encoding:NSASCIIStringEncoding];
+        [data release];
+    } else {
+        content = [[NSString alloc] initWithContentsOfFile:mapFile encoding:NSASCIIStringEncoding error:NULL];
+    }
 
     if (content != nil) {
         BOOL foundSymbols = NO;
