@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #import "symbolMaps.h"
 #import "symbolicate.h"
 
-void print_usage() {
+static void print_usage() {
     fprintf(stderr,
             "Usage: symbolicate [<options>] <file>\n"
             "\n"
