@@ -21,9 +21,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef CR_COMMON_H
 #define CR_COMMON_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 unsigned char nibble(char c);
 
 int convertStringToInteger(const char* str, int len);
 unsigned long long convertHexStringToLongLong(const char* str, int len);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

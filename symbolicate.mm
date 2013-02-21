@@ -144,7 +144,7 @@ static ObjCInfo *extractObjectiveCInfo(VMUMachOHeader *header, NSArray *inputArr
 #endif
         }
 
-        [array sortUsingFunction:(void *)CompareObjCInfos context:NULL];
+        [array sortUsingFunction:(NSInteger (*)(id, id, void *))CompareObjCInfos context:NULL];
     }
 
     CFIndex count = [array count];
