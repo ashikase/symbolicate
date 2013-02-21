@@ -364,6 +364,13 @@ NSString *symbolicate(NSString *content, unsigned progressStepping) {
                     NSString *matches[3];
                     [(NSArray *)bi getObjects:matches range:NSMakeRange(1, 3)];
 
+                    // Create a BinaryInfo object for the image
+                    bi = [[BinaryInfo alloc] init];
+                    bi->address = convertHexStringToLongLong([matches[0] UTF8String], [matches[0] length]);
+                    bi->path = matches[2];
+                    bi->line = 0;
+                    bi->blamable = YES;
+
                     // Get Mach-O header for the image
                     VMUMachOHeader *header = nil;
                     if (hasHeaderFromSharedCacheWithPath) {
@@ -376,48 +383,39 @@ NSString *symbolicate(NSString *content, unsigned progressStepping) {
                         header = [[VMUHeader extractMachOHeadersFromHeader:header matchingArchitecture:[VMUArchitecture currentArchitecture] considerArchives:NO] lastObject];
                     }
                     if (header != nil) {
-                        // Create a BinaryInfo object for the image
-                        bi = [[BinaryInfo alloc] init];
-                        bi->address = convertHexStringToLongLong([matches[0] UTF8String], [matches[0] length]);
                         unsigned long long textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
                         bi->slide = textStart - bi->address;
                         bi->owner = [VMUSymbolExtractor extractSymbolOwnerFromHeader:header];
                         bi->header = header;
-                        bi->path = matches[2];
-                        bi->line = 0;
-                        bi->blamable = YES;
                         for (VMULoadCommand *lc in [header loadCommands]) {
                             if ((int)object_getIvar(lc, _command_ivar) == LC_ENCRYPTION_INFO) {
                                 bi->encrypted = YES;
                                 break;
                             }
                         }
+                    }
 
-                        // Determine if binary image should not be blamed.
-                        if (hasHeaderFromSharedCacheWithPath && [bi->header isFromSharedCache]) {
-                            // Don't blame anything from the shared cache.
+                    // Determine if binary image should not be blamed.
+                    if (hasHeaderFromSharedCacheWithPath && [bi->header isFromSharedCache]) {
+                        // Don't blame anything from the shared cache.
+                        bi->blamable = NO;
+                    } else {
+                        // Don't blame white-listed libraries.
+                        if ([filters containsObject:bi->path]) {
                             bi->blamable = NO;
                         } else {
-                            // Don't blame white-listed libraries.
-                            if ([filters containsObject:bi->path]) {
-                                bi->blamable = NO;
-                            } else {
-                                // Don't blame white-listed folders.
-                                for (NSString *prefix in prefixFilters) {
-                                    if ([bi->path hasPrefix:prefix]) {
-                                        bi->blamable = NO;
-                                        break;
-                                    }
+                            // Don't blame white-listed folders.
+                            for (NSString *prefix in prefixFilters) {
+                                if ([bi->path hasPrefix:prefix]) {
+                                    bi->blamable = NO;
+                                    break;
                                 }
                             }
                         }
-
-                        [binaryImages setObject:bi forKey:bti->start_address];
-                        [bi release];
-                    } else {
-                        [binaryImages removeObjectForKey:bti->start_address];
-                        goto found_nothing;
                     }
+
+                    [binaryImages setObject:bi forKey:bti->start_address];
+                    [bi release];
                 }
 
                 // Determine if binary image should be blamed.
@@ -441,63 +439,64 @@ NSString *symbolicate(NSString *content, unsigned progressStepping) {
                 }
 
                 // Add source/symbol information to the end of the output line.
-                NSString *lineComment = nil;
-                unsigned long long address = bti->address + bi->slide;
-                VMUSourceInfo *srcInfo = [bi->owner sourceInfoForAddress:address];
-                if (srcInfo != nil) {
-                    // Add source file name and line number.
-                    lineComment = [NSString stringWithFormat:@"\t// %@:%u", escapeHTML([srcInfo path], escSet), [srcInfo lineNumber]];
-                } else {
-                    // Attempt to add symbol name and hex offset.
-                    VMUSymbol *symbol = [bi->owner symbolForAddress:address];
-                    if (symbol != nil) {
-                        NSString *name = [symbol name];
-                        if ([name isEqualToString:@"<redacted>"] && hasHeaderFromSharedCacheWithPath) {
-                            NSString *localName = nameForLocalSymbol([bi->header address], [symbol addressRange].location);
-                            if (localName != nil) {
-                                name = localName;
-                            } else {
-                                fprintf(stderr, "Unable to determine name for: %s, 0x%08llx\n", [bi->path UTF8String], [symbol addressRange].location);
+                if (bi->header != nil) {
+                    NSString *lineComment = nil;
+                    unsigned long long address = bti->address + bi->slide;
+                    VMUSourceInfo *srcInfo = [bi->owner sourceInfoForAddress:address];
+                    if (srcInfo != nil) {
+                        // Add source file name and line number.
+                        lineComment = [NSString stringWithFormat:@"\t// %@:%u", escapeHTML([srcInfo path], escSet), [srcInfo lineNumber]];
+                    } else {
+                        // Attempt to add symbol name and hex offset.
+                        VMUSymbol *symbol = [bi->owner symbolForAddress:address];
+                        if (symbol != nil) {
+                            NSString *name = [symbol name];
+                            if ([name isEqualToString:@"<redacted>"] && hasHeaderFromSharedCacheWithPath) {
+                                NSString *localName = nameForLocalSymbol([bi->header address], [symbol addressRange].location);
+                                if (localName != nil) {
+                                    name = localName;
+                                } else {
+                                    fprintf(stderr, "Unable to determine name for: %s, 0x%08llx\n", [bi->path UTF8String], [symbol addressRange].location);
+                                }
                             }
-                        }
-                        // Attempt to demangle name
-                        // NOTE: It seems that Apple's demangler fails for some
-                        //       names, so we attempt to do it ourselves.
-                        name = demangle(name);
+                            // Attempt to demangle name
+                            // NOTE: It seems that Apple's demangler fails for some
+                            //       names, so we attempt to do it ourselves.
+                            name = demangle(name);
 
-                        // FIXME: Where does this actually belong?
-                        if (isCrashing) {
-                            // Check if this function should never cause crash (only hang).
-                            if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [functionFilters containsObject:name]) {
-                                isCrashing = NO;
+                            // FIXME: Where does this actually belong?
+                            if (isCrashing) {
+                                // Check if this function should never cause crash (only hang).
+                                if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [functionFilters containsObject:name]) {
+                                    isCrashing = NO;
+                                }
+                            } else if (!isCrashing) {
+                                // Check if this function is actually causing crash.
+                                if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [reverseFilters containsObject:name]) {
+                                    isCrashing = YES;
+                                }
                             }
-                        } else if (!isCrashing) {
-                            // Check if this function is actually causing crash.
-                            if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [reverseFilters containsObject:name]) {
-                                isCrashing = YES;
+                            lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", escapeHTML(name, escSet), address - [symbol addressRange].location];
+                        } else if (!bi->encrypted) {
+                            // Try to extract some ObjC info.
+                            ObjCInfo *info = extractObjectiveCInfo(bi->header, bi->objcArray, address);
+                            if (info != nil) {
+                                lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", info->name, address - info->impAddr];
                             }
                         }
-                        lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", escapeHTML(name, escSet), address - [symbol addressRange].location];
-                    } else if (!bi->encrypted) {
-                        // Try to extract some ObjC info.
-                        ObjCInfo *info = extractObjectiveCInfo(bi->header, bi->objcArray, address);
-                        if (info != nil) {
-                            lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", info->name, address - info->impAddr];
+                    }
+                    if (lineComment != nil) {
+                        NSString *oldLine = [outputLines objectAtIndex:i];
+                        if (oldLine == (id)kCFNull) {
+                            oldLine = @"";
                         }
+                        NSString *newLine = [oldLine stringByAppendingString:lineComment];
+                        [outputLines replaceObjectAtIndex:i withObject:newLine];
                     }
-                }
-                if (lineComment != nil) {
-                    NSString *oldLine = [outputLines objectAtIndex:i];
-                    if (oldLine == (id)kCFNull) {
-                        oldLine = @"";
-                    }
-                    NSString *newLine = [oldLine stringByAppendingString:lineComment];
-                    [outputLines replaceObjectAtIndex:i withObject:newLine];
                 }
             }
         }
 
-found_nothing:
         ++i;
     }
     [extraInfoArray release];
