@@ -441,10 +441,13 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         // Add source file name and line number.
                         lineComment = [NSString stringWithFormat:@"\t// %@:%u", escapeHTML([srcInfo path], escSet), [srcInfo lineNumber]];
                     } else {
+                        NSString *name = nil;
+                        unsigned long long offset = 0;
+
                         // Attempt to add symbol name and hex offset.
                         VMUSymbol *symbol = [bi->owner symbolForAddress:address];
                         if (symbol != nil) {
-                            NSString *name = [symbol name];
+                            name = [symbol name];
                             if ([name isEqualToString:@"<redacted>"] && hasHeaderFromSharedCacheWithPath) {
                                 NSString *localName = nameForLocalSymbol([bi->header address], [symbol addressRange].location);
                                 if (localName != nil) {
@@ -470,12 +473,13 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                                     isCrashing = YES;
                                 }
                             }
-                            lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", escapeHTML(name, escSet), address - [symbol addressRange].location];
+                            offset = address - [symbol addressRange].location;
                         } else if (NSDictionary *map = [symbolMaps objectForKey:bi->path]) {
                             for (NSNumber *number in [[[map allKeys] sortedArrayUsingSelector:@selector(compare:)] reverseObjectEnumerator]) {
                                 unsigned long long symbolAddress = [number unsignedLongLongValue];
                                 if (address > symbolAddress) {
-                                    lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", demangle([map objectForKey:number]), address - symbolAddress];
+                                    name = demangle([map objectForKey:number]);
+                                    offset = address - symbolAddress;
                                     break;
                                 }
                             }
@@ -483,8 +487,13 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             // Try to extract some ObjC info.
                             ObjCInfo *info = extractObjectiveCInfo(bi->header, bi->objcArray, address);
                             if (info != nil) {
-                                lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", info->name, address - info->impAddr];
+                                name = info->name;
+                                offset = address - info->impAddr;
                             }
+                        }
+
+                        if (name != nil) {
+                            lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", escapeHTML(name, escSet), offset];
                         }
                     }
                     if (lineComment != nil) {
