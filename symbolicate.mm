@@ -24,14 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <mach-o/loader.h>
 #include <objc/runtime.h>
 #include <notify.h>
-#include <stdlib.h>
-#include <sys/wait.h>
-#include <unistd.h>
 #import "RegexKitLite.h"
 #include "common.h"
-
-//#import <UIKit/UIKit.h>
-//#import "ModalActionSheet.h"
 
 #include "Headers.h"
 #include "localSymbols.h"
