@@ -426,7 +426,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                 id currentLine = [outputLines objectAtIndex:i];
                 if (currentLine == (id)kCFNull) {
                     NSString *newLine = [[NSString alloc] initWithFormat:@"%u\t%-30s\t0x%08llx 0x%llx + %llu",
-                             exceptionStackDepth, [[bi->path lastPathComponent] UTF8String], bi->address, bti->address, bti->address - bi->address];
+                             exceptionStackDepth, [[bi->path lastPathComponent] UTF8String], bti->address, bi->address, bti->address - bi->address];
                     [outputLines replaceObjectAtIndex:i withObject:newLine];
                     [newLine release];
                     ++exceptionStackDepth;
