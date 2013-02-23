@@ -426,18 +426,9 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                     }
                 }
 
-                // If line is from exception, add path and address info.
-                id currentLine = [outputLines objectAtIndex:i];
-                if (currentLine == (id)kCFNull) {
-                    NSString *newLine = [[NSString alloc] initWithFormat:@"%u\t%-30s\t0x%08llx 0x%llx + %llu",
-                             bti->depth, [[bi->path lastPathComponent] UTF8String], bti->address, bi->address, bti->address - bi->address];
-                    [outputLines replaceObjectAtIndex:i withObject:newLine];
-                    [newLine release];
-                }
-
                 // Add source/symbol information to the end of the output line.
+                NSString *lineComment = nil;
                 if (bi->header != nil) {
-                    NSString *lineComment = nil;
                     unsigned long long address = bti->address + bi->slide;
                     VMUSourceInfo *srcInfo = [bi->owner sourceInfoForAddress:address];
                     if (srcInfo != nil) {
@@ -499,15 +490,14 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", escapeHTML(name, escSet), offset];
                         }
                     }
-                    if (lineComment != nil) {
-                        NSString *oldLine = [outputLines objectAtIndex:i];
-                        if (oldLine == (id)kCFNull) {
-                            oldLine = @"";
-                        }
-                        NSString *newLine = [oldLine stringByAppendingString:lineComment];
-                        [outputLines replaceObjectAtIndex:i withObject:newLine];
-                    }
                 }
+
+                // Write out line of backtrace.
+                NSString *newLine = [[NSString alloc] initWithFormat:@"%u\t%-30s\t0x%08llx 0x%llx + %llu%@",
+                         bti->depth, [[bi->path lastPathComponent] UTF8String], bti->address, bi->address, bti->address - bi->address, lineComment ?: @""];
+                [outputLines replaceObjectAtIndex:i withObject:newLine];
+                [newLine release];
+
             }
         }
 
