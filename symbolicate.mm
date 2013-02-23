@@ -41,7 +41,7 @@ enum SymbolicationMode {
     @package
         // NSString *binary;
         NSUInteger depth;
-        unsigned long long start_address;
+        unsigned long long imageAddress;
         unsigned long long address;
 }
 @end
@@ -246,7 +246,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             BacktraceInfo *bti = [[[BacktraceInfo alloc] init] autorelease];
                             // bti->binary = matches[0];
                             bti->depth = depth;
-                            bti->start_address = convertHexStringToLongLong([matches[1] UTF8String], [matches[1] length]);
+                            bti->imageAddress = convertHexStringToLongLong([matches[1] UTF8String], [matches[1] length]);
                             bti->address = convertHexStringToLongLong([matches[0] UTF8String], [matches[0] length]);
                             extraInfo = bti;
                             ++depth;
@@ -269,7 +269,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             BacktraceInfo *bti = [[BacktraceInfo alloc] init];
                             // bti->binary = matches[0];
                             bti->depth = depth;
-                            bti->start_address = 0;
+                            bti->imageAddress = 0;
                             bti->address = convertHexStringToLongLong([address UTF8String], [address length]);
                             [extraInfoArray addObject:bti];
                             [bti release];
@@ -312,9 +312,9 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     Ivar _command_ivar = class_getInstanceVariable([VMULoadCommand class], "_command");
 
     // Prepare array of image start addresses for determining symbols of exception.
-    NSArray *imageStartAddresses = nil;
+    NSArray *imageAddresses = nil;
     if (hasLastExceptionBacktrace) {
-        imageStartAddresses = [[binaryImages allKeys] sortedArrayUsingSelector:@selector(compare:)];
+        imageAddresses = [[binaryImages allKeys] sortedArrayUsingSelector:@selector(compare:)];
     }
 
     for (BacktraceInfo *bti in extraInfoArray) {
@@ -335,18 +335,18 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
             isCrashing = NO;
         } else if (bti != (id)kCFNull) {
             // Determine start address for this backtrace line.
-            if (bti->start_address == 0) {
-                for (NSNumber *number in [imageStartAddresses reverseObjectEnumerator]) {
-                    unsigned long long startAddress = [number unsignedLongLongValue];
-                    if (bti->address > startAddress) {
-                        bti->start_address = startAddress;
+            if (bti->imageAddress == 0) {
+                for (NSNumber *number in [imageAddresses reverseObjectEnumerator]) {
+                    unsigned long long imageAddress = [number unsignedLongLongValue];
+                    if (bti->address > imageAddress) {
+                        bti->imageAddress = imageAddress;
                         break;
                     }
                 }
             }
 
             // Retrieve info for related binary image.
-            NSNumber *imageAddress = [NSNumber numberWithUnsignedLongLong:bti->start_address];
+            NSNumber *imageAddress = [NSNumber numberWithUnsignedLongLong:bti->imageAddress];
             BinaryInfo *bi = [binaryImages objectForKey:imageAddress];
             if (bi != nil) {
                 // NOTE: If image has not been processed yet, type will be NSArray.
