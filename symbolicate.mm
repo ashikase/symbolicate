@@ -488,7 +488,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                 }
 
                 // Write out line of backtrace.
-                NSString *newLine = [[NSString alloc] initWithFormat:@"%u\t%-30s\t0x%08llx 0x%llx + 0x%llx%@",
+                NSString *newLine = [[NSString alloc] initWithFormat:@"%u\t%-30s\t0x%08llx 0x%08llx + 0x%llx%@",
                          bti->depth, [[bi->path lastPathComponent] UTF8String], bti->address, bi->address, bti->address - bi->address, lineComment ?: @""];
                 [outputLines replaceObjectAtIndex:i withObject:newLine];
                 [newLine release];
