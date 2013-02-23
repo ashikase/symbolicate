@@ -40,6 +40,7 @@ enum SymbolicationMode {
 @interface BacktraceInfo : NSObject {
     @package
         // NSString *binary;
+        NSUInteger depth;
         NSString *start_address;
         unsigned long long address;
 }
@@ -194,6 +195,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     NSMutableDictionary *binaryImages = [[NSMutableDictionary alloc] init];
     BOOL hasLastExceptionBacktrace = NO;
     BOOL isFilteredSignal = YES;
+    NSUInteger depth = 0;
 
     for (NSString *line in inputLines) {
         // extraInfo:
@@ -232,10 +234,9 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                 if ([line isEqualToString:@"Binary Images:"]) {
                     mode = SM_BinaryImageMode;
                 } else if ([line length] > 0) {
-                    if ([line hasSuffix:@"Crashed:"]) {
-                        extraInfo = (id)kCFBooleanTrue;
-                    } else if ([line hasSuffix:@":"]) {
-                        extraInfo = (id)kCFBooleanFalse;
+                    if ([line hasSuffix:@":"]) {
+                        extraInfo = ([line rangeOfString:@"Crashed"].location != NSNotFound) ? (id)kCFBooleanTrue : (id)kCFBooleanFalse;
+                        depth = 0;
                     } else {
                         NSArray *array = [line captureComponentsMatchedByRegex:@"^\\d+ +.*\\S\\s+0x([0-9a-f]+) 0x([0-9a-f]+) \\+ \\d+$"];
                         if ([array count] == 3) {
@@ -244,9 +245,11 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
 
                             BacktraceInfo *bti = [[[BacktraceInfo alloc] init] autorelease];
                             // bti->binary = matches[0];
+                            bti->depth = depth;
                             bti->start_address = matches[1];
                             bti->address = convertHexStringToLongLong([matches[0] UTF8String], [matches[0] length]);
                             extraInfo = bti;
+                            ++depth;
                         }
                     }
                 }
@@ -265,10 +268,12 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         for (NSString *address in array) {
                             BacktraceInfo *bti = [[BacktraceInfo alloc] init];
                             // bti->binary = matches[0];
+                            bti->depth = depth;
                             bti->start_address = 0;
                             bti->address = convertHexStringToLongLong([address UTF8String], [address length]);
                             [extraInfoArray addObject:bti];
                             [bti release];
+                            ++depth;
 
                             [outputLines addObject:[NSNull null]];
                         }
@@ -296,7 +301,6 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     NSCharacterSet *escSet = [NSCharacterSet characterSetWithCharactersInString:@"<>&"];
 
     NSUInteger i = 0;
-    NSUInteger exceptionStackDepth = 0;
     BOOL isCrashing = NO;
     BOOL hasHeaderFromSharedCacheWithPath = [VMUMemory_File respondsToSelector:@selector(headerFromSharedCacheWithPath:)];
     Class $BinaryInfo = [BinaryInfo class];
@@ -426,10 +430,9 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                 id currentLine = [outputLines objectAtIndex:i];
                 if (currentLine == (id)kCFNull) {
                     NSString *newLine = [[NSString alloc] initWithFormat:@"%u\t%-30s\t0x%08llx 0x%llx + %llu",
-                             exceptionStackDepth, [[bi->path lastPathComponent] UTF8String], bti->address, bi->address, bti->address - bi->address];
+                             bti->depth, [[bi->path lastPathComponent] UTF8String], bti->address, bi->address, bti->address - bi->address];
                     [outputLines replaceObjectAtIndex:i withObject:newLine];
                     [newLine release];
-                    ++exceptionStackDepth;
                 }
 
                 // Add source/symbol information to the end of the output line.
