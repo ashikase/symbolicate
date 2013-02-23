@@ -178,6 +178,8 @@ static NSString *escapeHTML(NSString *x, NSCharacterSet *escSet) {
 NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned progressStepping) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
+    BOOL alreadySymbolicated = [content isMatchedByRegex:@"<key>symbolicated</key>[\\n\\s]+<true\\s*/>"];
+
     NSArray *inputLines = [content componentsSeparatedByString:@"\n"];
     NSMutableArray *outputLines = [[NSMutableArray alloc] init];
     BOOL shouldNotifyOfProgress = (progressStepping > 0 && progressStepping < 100);
@@ -531,6 +533,11 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     [blameInfo appendString:@"</array>"];
     [outputLines insertObject:blameInfo atIndex:[outputLines count] - 3];
     [binaryImages release];
+
+    // Mark that this file has been symbolicated.
+    if (!alreadySymbolicated) {
+        [outputLines insertObject:@"\t<key>symbolicated</key>\n\t<true />" atIndex:[outputLines count] - 3];
+    }
 
     [pool drain];
 
