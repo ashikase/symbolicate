@@ -25,9 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 extern "C" {
 #endif
 
-unsigned char nibble(char c);
-
-int convertStringToInteger(const char* str, int len);
 unsigned long long unsignedLongLongFromHexString(const char* str, int len);
 
 #ifdef __cplusplus
