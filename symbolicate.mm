@@ -246,8 +246,8 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             BacktraceInfo *bti = [[[BacktraceInfo alloc] init] autorelease];
                             // bti->binary = matches[0];
                             bti->depth = depth;
-                            bti->imageAddress = convertHexStringToLongLong([matches[1] UTF8String], [matches[1] length]);
-                            bti->address = convertHexStringToLongLong([matches[0] UTF8String], [matches[0] length]);
+                            bti->imageAddress = unsignedLongLongFromHexString([matches[1] UTF8String], [matches[1] length]);
+                            bti->address = unsignedLongLongFromHexString([matches[0] UTF8String], [matches[0] length]);
                             extraInfo = bti;
                             ++depth;
                         }
@@ -270,7 +270,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             // bti->binary = matches[0];
                             bti->depth = depth;
                             bti->imageAddress = 0;
-                            bti->address = convertHexStringToLongLong([address UTF8String], [address length]);
+                            bti->address = unsignedLongLongFromHexString([address UTF8String], [address length]);
                             [extraInfoArray addObject:bti];
                             [bti release];
                             ++depth;
@@ -287,7 +287,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                 NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +](.+?) arm\\w*  (?:&lt;[0-9a-f]{32}&gt; )?(.+)$"];
                 if ([array count] == 4) {
                     NSString *match = [array objectAtIndex:1];
-                    unsigned long long address = convertHexStringToLongLong([match UTF8String], [match length]);
+                    unsigned long long address = unsignedLongLongFromHexString([match UTF8String], [match length]);
                     [binaryImages setObject:array forKey:[NSNumber numberWithUnsignedLongLong:address]];
                 } else {
                     mode = SM_CheckingMode;
@@ -359,7 +359,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
 
                     // Create a BinaryInfo object for the image
                     bi = [[BinaryInfo alloc] init];
-                    bi->address = convertHexStringToLongLong([matches[0] UTF8String], [matches[0] length]);
+                    bi->address = unsignedLongLongFromHexString([matches[0] UTF8String], [matches[0] length]);
                     bi->path = matches[2];
                     bi->line = 0;
                     bi->blamable = YES;

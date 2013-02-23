@@ -28,7 +28,7 @@ extern "C" {
 unsigned char nibble(char c);
 
 int convertStringToInteger(const char* str, int len);
-unsigned long long convertHexStringToLongLong(const char* str, int len);
+unsigned long long unsignedLongLongFromHexString(const char* str, int len);
 
 #ifdef __cplusplus
 }

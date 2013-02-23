@@ -38,7 +38,7 @@ int convertStringToInteger(const char* str, int len) {
 	return res;
 }
 
-unsigned long long convertHexStringToLongLong(const char* str, int len) {
+unsigned long long unsignedLongLongFromHexString(const char* str, int len) {
 	unsigned long long res = 0;
 	for (int i = 0; i < len; ++ i) {
 		unsigned char n = nibble(str[i]);

@@ -62,7 +62,7 @@ NSDictionary *parseMapFile(NSString *mapFile) {
                             [matches[1] hasPrefix:@"literal string:"] ||
                             [matches[1] rangeOfString:@"-"].location != NSNotFound
                             )) {
-                            unsigned long long address = convertHexStringToLongLong([matches[0] UTF8String], [matches[0] length]);
+                            unsigned long long address = unsignedLongLongFromHexString([matches[0] UTF8String], [matches[0] length]);
                             NSNumber *number = [[NSNumber alloc] initWithUnsignedLongLong:address];
                             [result setObject:matches[1] forKey:number];
                             [number release];
