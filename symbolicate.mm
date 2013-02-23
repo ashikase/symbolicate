@@ -41,7 +41,7 @@ enum SymbolicationMode {
     @package
         // NSString *binary;
         NSUInteger depth;
-        NSString *start_address;
+        unsigned long long start_address;
         unsigned long long address;
 }
 @end
@@ -246,7 +246,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             BacktraceInfo *bti = [[[BacktraceInfo alloc] init] autorelease];
                             // bti->binary = matches[0];
                             bti->depth = depth;
-                            bti->start_address = matches[1];
+                            bti->start_address = convertHexStringToLongLong([matches[1] UTF8String], [matches[1] length]);
                             bti->address = convertHexStringToLongLong([matches[0] UTF8String], [matches[0] length]);
                             extraInfo = bti;
                             ++depth;
@@ -286,7 +286,9 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
             case SM_BinaryImageMode: {
                 NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +](.+?) arm\\w*  (?:&lt;[0-9a-f]{32}&gt; )?(.+)$"];
                 if ([array count] == 4) {
-                    [binaryImages setObject:array forKey:[array objectAtIndex:1]];
+                    NSString *match = [array objectAtIndex:1];
+                    unsigned long long address = convertHexStringToLongLong([match UTF8String], [match length]);
+                    [binaryImages setObject:array forKey:[NSNumber numberWithUnsignedLongLong:address]];
                 } else {
                     mode = SM_CheckingMode;
                 }
@@ -312,15 +314,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     // Prepare array of image start addresses for determining symbols of exception.
     NSArray *imageStartAddresses = nil;
     if (hasLastExceptionBacktrace) {
-        NSMutableArray *array = [[NSMutableArray alloc] init];
-        for (NSString *key in [binaryImages allKeys]) {
-            unsigned long long startAddress = convertHexStringToLongLong([key UTF8String], [key length]);
-            NSNumber *number = [[NSNumber alloc] initWithUnsignedLongLong:startAddress];
-            [array addObject:number];
-            [number release];
-        }
-        imageStartAddresses = [array sortedArrayUsingSelector:@selector(compare:)];
-        [array release];
+        imageStartAddresses = [[binaryImages allKeys] sortedArrayUsingSelector:@selector(compare:)];
     }
 
     for (BacktraceInfo *bti in extraInfoArray) {
@@ -345,14 +339,15 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                 for (NSNumber *number in [imageStartAddresses reverseObjectEnumerator]) {
                     unsigned long long startAddress = [number unsignedLongLongValue];
                     if (bti->address > startAddress) {
-                        bti->start_address = [NSString stringWithFormat:@"%llx", startAddress];
+                        bti->start_address = startAddress;
                         break;
                     }
                 }
             }
 
             // Retrieve info for related binary image.
-            BinaryInfo *bi = [binaryImages objectForKey:bti->start_address];
+            NSNumber *imageAddress = [NSNumber numberWithUnsignedLongLong:bti->start_address];
+            BinaryInfo *bi = [binaryImages objectForKey:imageAddress];
             if (bi != nil) {
                 // NOTE: If image has not been processed yet, type will be NSArray.
                 if (![bi isKindOfClass:$BinaryInfo]) {
@@ -412,7 +407,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         }
                     }
 
-                    [binaryImages setObject:bi forKey:bti->start_address];
+                    [binaryImages setObject:bi forKey:imageAddress];
                     [bi release];
                 }
 
@@ -523,8 +518,8 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     // Write down blame info.
     NSMutableString *blameInfo = [NSMutableString stringWithString:@"<key>blame</key>\n<array>\n"];
     if (isFilteredSignal) {
-        for (NSString *name in binaryImages) {
-            BinaryInfo *bi = [binaryImages objectForKey:name];
+        for (NSNumber *key in binaryImages) {
+            BinaryInfo *bi = [binaryImages objectForKey:key];
             if ([bi isKindOfClass:$BinaryInfo] && bi->blamable) {
                 [blameInfo appendFormat:@"\t<array><string>%@</string><integer>%d</integer></array>\n", escapeHTML(bi->path, escSet), bi->line];
             }
