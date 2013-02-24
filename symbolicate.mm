@@ -179,6 +179,10 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
     BOOL alreadySymbolicated = [content isMatchedByRegex:@"<key>symbolicated</key>[\\n\\s]+<true\\s*/>"];
+    if (alreadySymbolicated && [symbolMaps count] == 0) {
+        fprintf(stderr, "WARNING: File has already been symbolicated, and no symbol maps were provided for reprocessing.\n");
+        return nil;
+    }
 
     NSArray *inputLines = [content componentsSeparatedByString:@"\n"];
     NSMutableArray *outputLines = [[NSMutableArray alloc] init];
@@ -223,7 +227,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                     break;
                 } else if ([line hasPrefix:@"Last Exception Backtrace:"]) {
                     hasLastExceptionBacktrace = YES;
-                    mode = SM_ExceptionMode;
+                    mode = alreadySymbolicated ? SM_BacktraceMode : SM_ExceptionMode;
                     break;
                 } else if (![line hasPrefix:@"Thread 0"]) {
                     break;
@@ -240,7 +244,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         extraInfo = ([line rangeOfString:@"Crashed"].location != NSNotFound) ? (id)kCFBooleanTrue : (id)kCFBooleanFalse;
                         depth = 0;
                     } else {
-                        NSArray *array = [line captureComponentsMatchedByRegex:@"^\\d+ +.*\\S\\s+0x([0-9a-f]+) 0x([0-9a-f]+) \\+ \\d+$"];
+                        NSArray *array = [line captureComponentsMatchedByRegex:@"^\\d+\\s+.*\\S\\s+0x([0-9a-f]+) 0x([0-9a-f]+) \\+ (?:0x)?\\d+"];
                         if ([array count] == 3) {
                             NSString *matches[2];
                             [array getObjects:matches range:NSMakeRange(1, 2)];
@@ -438,6 +442,9 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         // Attempt to add symbol name and hex offset.
                         VMUSymbol *symbol = [bi->owner symbolForAddress:address];
                         if (symbol != nil) {
+                            if (alreadySymbolicated) {
+                                goto skip_this_line;
+                            }
                             name = [symbol name];
                             if ([name isEqualToString:@"<redacted>"] && hasHeaderFromSharedCacheWithPath) {
                                 NSString *localName = nameForLocalSymbol([bi->header address], [symbol addressRange].location);
@@ -501,6 +508,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
             }
         }
 
+skip_this_line:
         ++i;
     }
     [extraInfoArray release];
@@ -520,22 +528,22 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     }
     */
 
-    // Write down blame info.
-    NSMutableString *blameInfo = [NSMutableString stringWithString:@"<key>blame</key>\n<array>\n"];
-    if (isFilteredSignal) {
-        for (NSNumber *key in binaryImages) {
-            BinaryInfo *bi = [binaryImages objectForKey:key];
-            if ([bi isKindOfClass:$BinaryInfo] && bi->blamable) {
-                [blameInfo appendFormat:@"\t<array><string>%@</string><integer>%d</integer></array>\n", escapeHTML(bi->path, escSet), bi->line];
+    if (!alreadySymbolicated) {
+        // Write down blame info.
+        NSMutableString *blameInfo = [NSMutableString stringWithString:@"<key>blame</key>\n<array>\n"];
+        if (isFilteredSignal) {
+            for (NSNumber *key in binaryImages) {
+                BinaryInfo *bi = [binaryImages objectForKey:key];
+                if ([bi isKindOfClass:$BinaryInfo] && bi->blamable) {
+                    [blameInfo appendFormat:@"\t<array><string>%@</string><integer>%d</integer></array>\n", escapeHTML(bi->path, escSet), bi->line];
+                }
             }
         }
-    }
-    [blameInfo appendString:@"</array>"];
-    [outputLines insertObject:blameInfo atIndex:[outputLines count] - 3];
-    [binaryImages release];
+        [blameInfo appendString:@"</array>"];
+        [outputLines insertObject:blameInfo atIndex:[outputLines count] - 3];
+        [binaryImages release];
 
-    // Mark that this file has been symbolicated.
-    if (!alreadySymbolicated) {
+        // Mark that this file has been symbolicated.
         [outputLines insertObject:@"\t<key>symbolicated</key>\n\t<true />" atIndex:[outputLines count] - 3];
     }
 
