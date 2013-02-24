@@ -553,4 +553,4 @@ skip_this_line:
     return [outputLines componentsJoinedByString:@"\n"];
 }
 
-/* vim: set ft=objc ff=unix sw=4 ts=4 tw=80 expandtab: */
+/* vim: set ft=objcpp ff=unix sw=4 ts=4 tw=80 expandtab: */
