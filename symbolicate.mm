@@ -530,16 +530,16 @@ skip_this_line:
 
     if (!alreadySymbolicated) {
         // Write down blame info.
-        NSMutableString *blameInfo = [NSMutableString stringWithString:@"<key>blame</key>\n<array>\n"];
+        NSMutableString *blameInfo = [NSMutableString stringWithString:@"\t<key>blame</key>\n\t<array>\n"];
         if (isFilteredSignal) {
             for (NSNumber *key in binaryImages) {
                 BinaryInfo *bi = [binaryImages objectForKey:key];
                 if ([bi isKindOfClass:$BinaryInfo] && bi->blamable) {
-                    [blameInfo appendFormat:@"\t<array><string>%@</string><integer>%d</integer></array>\n", escapeHTML(bi->path, escSet), bi->line];
+                    [blameInfo appendFormat:@"\t\t<array><string>%@</string><integer>%d</integer></array>\n", escapeHTML(bi->path, escSet), bi->line];
                 }
             }
         }
-        [blameInfo appendString:@"</array>"];
+        [blameInfo appendString:@"\t</array>"];
         [outputLines insertObject:blameInfo atIndex:[outputLines count] - 3];
         [binaryImages release];
 
