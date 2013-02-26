@@ -96,6 +96,10 @@ static uint64_t read_uleb128(const uint8_t **buf, const uint8_t *buf_end) {
     return result;
 }
 
+static CFComparisonResult ReversedCompareNSNumber(NSNumber *a, NSNumber *b) {
+    return [b compare:a];
+}
+
 static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
     NSMutableArray *addresses = [NSMutableArray array];
 
@@ -125,6 +129,7 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
         }
     }
 
+    [addresses sortUsingFunction:(NSInteger (*)(id, id, void *))ReversedCompareNSNumber context:NULL];
     return addresses;
 }
 
@@ -519,10 +524,14 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             if (bi->symbolAddresses == nil) {
                                 bi->symbolAddresses = symbolAddressesForImageWithHeader(bi->header);
                             }
-                            for (NSNumber *number in [bi->symbolAddresses reverseObjectEnumerator]) {
-                                symbolAddress = [number unsignedLongLongValue];
-                                if (address > symbolAddress) {
-                                    break;
+                            NSUInteger count = [bi->symbolAddresses count];
+                            if (count != 0) {
+                                NSNumber *targetAddress = [[NSNumber alloc] initWithUnsignedLongLong:address];
+                                CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->symbolAddresses, CFRangeMake(0, count), targetAddress, (CFComparatorFunction)ReversedCompareNSNumber, NULL);
+                                [targetAddress release];
+
+                                if (matchIndex < count) {
+                                    symbolAddress = [[bi->symbolAddresses objectAtIndex:matchIndex] unsignedLongLongValue];
                                 }
                             }
 
@@ -530,7 +539,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             if (bi->methods == nil) {
                                 bi->methods = methodsForImageWithHeader(bi->header);
                             }
-                            NSUInteger count = [bi->methods count];
+                            count = [bi->methods count];
                             if (count != 0) {
                                 MethodInfo *targetMethod = [[MethodInfo alloc] init];
                                 targetMethod->impAddr = address;
