@@ -46,6 +46,7 @@ typedef struct _VMURange {
 - (void)buildSharedCacheMap;
 - (id)initWithPath:(id)path fileRange:(VMURange)range mapToAddress:(unsigned long long)address architecture:(id)architecture;
 @end
+@interface VMUMemory_Handle : VMUMemory_Base <VMUMemory> @end
 @interface VMUSourceInfo : VMUAddressRange <NSCopying>
 - (unsigned)lineNumber;
 - (id)path;

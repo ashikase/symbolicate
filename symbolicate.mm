@@ -53,6 +53,7 @@ enum SymbolicationMode {
         long long slide;
         VMUSymbolOwner *owner;
         VMUMachOHeader *header;
+        NSArray *symbolAddresses;
         NSArray *methods;
         NSString *path;
         NSUInteger line;
@@ -69,6 +70,63 @@ enum SymbolicationMode {
 }
 @end
 @implementation MethodInfo @end
+
+static uint64_t read_uleb128(const uint8_t **buf, const uint8_t *buf_end) {
+    uint64_t result = 0;
+
+    const uint8_t *p = *buf;
+    uint8_t byte;
+    unsigned shift = 0;
+    do {
+        if (p >= buf_end) {
+            fprintf(stderr, "WARNING: Bounds failure in read_uleb128().\n");
+            return 0;
+        }
+
+        byte = *p++;
+        if (shift >= 64 || (byte << shift >> shift) != byte) {
+            fprintf(stderr, "WARNING: Read value larger than 64-bits in read_uleb128().\n");
+            return 0;
+        } else {
+            result |= (byte & 0x7f) << shift;
+            shift += 7;
+        }
+    } while ((byte & 0x80) != 0);
+    *buf = p;
+    return result;
+}
+
+static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
+    NSMutableArray *addresses = [NSMutableArray array];
+
+    VMUMemory_Handle *memory = [header memory];
+    Ivar ivar = class_getInstanceVariable([VMUMemory_Handle class], "_data");
+    const uint8_t *data = reinterpret_cast<const uint8_t *>(object_getIvar(memory, ivar));
+    if (data != NULL) {
+        const mach_header *mh = reinterpret_cast<const mach_header *>(data);
+        if (mh->magic == MH_MAGIC) {
+            const load_command *cmd = reinterpret_cast<const load_command *>(data + sizeof(mach_header));
+            for (uint32_t j = 0; j < mh->ncmds; ++j) {
+                if (cmd->cmd == LC_FUNCTION_STARTS) {
+                    const linkedit_data_command *functionStarts = reinterpret_cast<const linkedit_data_command *>(cmd);
+                    const uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
+                    const uint8_t *start = data + textStart + functionStarts->dataoff;
+                    const uint8_t *end = start + functionStarts->datasize;
+                    uint64_t offset;
+                    uint64_t symbolAddress = 0;
+                    while ((offset = read_uleb128(&start, end))) {
+                        symbolAddress += offset;
+                        [addresses addObject:[NSNumber numberWithUnsignedLongLong:symbolAddress]];
+                    }
+                    break;
+                }
+                cmd = reinterpret_cast<const load_command *>((uint8_t *)cmd + cmd->cmdsize);
+            }
+        }
+    }
+
+    return addresses;
+}
 
 static CFComparisonResult CompareMethodInfos(MethodInfo *a, MethodInfo *b) {
     return (a->impAddr < b->impAddr) ? kCFCompareLessThan : (a->impAddr > b->impAddr) ? kCFCompareGreaterThan : kCFCompareEqualTo;
@@ -457,6 +515,17 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             }
                         } else if (!bi->encrypted) {
                             // Try to extract some ObjC info.
+                            unsigned long long symbolAddress = 0;
+                            if (bi->symbolAddresses == nil) {
+                                bi->symbolAddresses = symbolAddressesForImageWithHeader(bi->header);
+                            }
+                            for (NSNumber *number in [bi->symbolAddresses reverseObjectEnumerator]) {
+                                symbolAddress = [number unsignedLongLongValue];
+                                if (address > symbolAddress) {
+                                    break;
+                                }
+                            }
+
                             MethodInfo *method = nil;
                             if (bi->methods == nil) {
                                 bi->methods = methodsForImageWithHeader(bi->header);
@@ -476,9 +545,15 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                                     method = (indexOfMatch != 0) ? [bi->methods objectAtIndex:(indexOfMatch - 1)] : nil;
                                 }
                             }
+
                             if (method != nil) {
-                                name = method->name;
-                                offset = address - method->impAddr;
+                                if (symbolAddress <= method->impAddr) {
+                                    name = method->name;
+                                    offset = address - method->impAddr;
+                                } else {
+                                    name = [NSString stringWithFormat:@"0x%08llx", symbolAddress];
+                                    offset = address - symbolAddress;
+                                }
                             }
                         }
 
