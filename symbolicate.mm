@@ -39,7 +39,6 @@ enum SymbolicationMode {
 
 @interface BacktraceInfo : NSObject {
     @package
-        // NSString *binary;
         NSUInteger depth;
         unsigned long long imageAddress;
         unsigned long long address;
@@ -250,7 +249,6 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             [array getObjects:matches range:NSMakeRange(1, 2)];
 
                             BacktraceInfo *bti = [[[BacktraceInfo alloc] init] autorelease];
-                            // bti->binary = matches[0];
                             bti->depth = depth;
                             bti->imageAddress = unsignedLongLongFromHexString([matches[1] UTF8String], [matches[1] length]);
                             bti->address = unsignedLongLongFromHexString([matches[0] UTF8String], [matches[0] length]);
@@ -273,7 +271,6 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         NSArray *array = [[line substringWithRange:range] componentsSeparatedByString:@" "];
                         for (NSString *address in array) {
                             BacktraceInfo *bti = [[BacktraceInfo alloc] init];
-                            // bti->binary = matches[0];
                             bti->depth = depth;
                             bti->imageAddress = 0;
                             bti->address = unsignedLongLongFromHexString([address UTF8String], [address length]);
