@@ -128,8 +128,8 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
     return addresses;
 }
 
-static CFComparisonResult CompareMethodInfos(MethodInfo *a, MethodInfo *b) {
-    return (a->impAddr < b->impAddr) ? kCFCompareLessThan : (a->impAddr > b->impAddr) ? kCFCompareGreaterThan : kCFCompareEqualTo;
+static CFComparisonResult ReversedCompareMethodInfos(MethodInfo *a, MethodInfo *b) {
+    return (a->impAddr > b->impAddr) ? kCFCompareLessThan : (a->impAddr < b->impAddr) ? kCFCompareGreaterThan : kCFCompareEqualTo;
 }
 
 // NOTE: The code for this function was copied from MachO_File of the Peace project.
@@ -192,7 +192,7 @@ NSArray *methodsForImageWithHeader(VMUMachOHeader *header) {
 #endif
     }
 
-    [methods sortUsingFunction:(NSInteger (*)(id, id, void *))CompareMethodInfos context:NULL];
+    [methods sortUsingFunction:(NSInteger (*)(id, id, void *))ReversedCompareMethodInfos context:NULL];
     return methods;
 }
 
@@ -532,17 +532,13 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             }
                             NSUInteger count = [bi->methods count];
                             if (count != 0) {
-                                method = [[MethodInfo alloc] init];
-                                method->impAddr = address;
-                                CFIndex indexOfMatch = CFArrayBSearchValues((CFArrayRef)bi->methods, CFRangeMake(0, count), method, (CFComparatorFunction)CompareMethodInfos, NULL);
-                                if (indexOfMatch >= count) {
-                                    indexOfMatch = count - 1;
-                                }
+                                MethodInfo *targetMethod = [[MethodInfo alloc] init];
+                                targetMethod->impAddr = address;
+                                CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->methods, CFRangeMake(0, count), targetMethod, (CFComparatorFunction)ReversedCompareMethodInfos, NULL);
+                                [targetMethod release];
 
-                                [method release];
-                                method = [bi->methods objectAtIndex:indexOfMatch];
-                                if (method->impAddr > address) {
-                                    method = (indexOfMatch != 0) ? [bi->methods objectAtIndex:(indexOfMatch - 1)] : nil;
+                                if (matchIndex < count) {
+                                    method = [bi->methods objectAtIndex:matchIndex];
                                 }
                             }
 
