@@ -551,8 +551,8 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                                 }
                             }
 
-                            if (method != nil) {
-                                if (symbolAddress <= method->impAddr) {
+                            if (symbolAddress != 0) {
+                                if (method != nil && method->impAddr >= symbolAddress) {
                                     name = method->name;
                                     offset = address - method->impAddr;
                                 } else {
