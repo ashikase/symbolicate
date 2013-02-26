@@ -53,7 +53,7 @@ enum SymbolicationMode {
         long long slide;
         VMUSymbolOwner *owner;
         VMUMachOHeader *header;
-        NSArray *objcArray;
+        NSArray *methods;
         NSString *path;
         NSUInteger line;
         BOOL encrypted;
@@ -62,103 +62,80 @@ enum SymbolicationMode {
 @end
 @implementation BinaryInfo @end
 
-@interface ObjCInfo : NSObject {
+@interface MethodInfo : NSObject {
     @package
         unsigned long long impAddr;
         NSString *name;
 }
 @end
-@implementation ObjCInfo @end
+@implementation MethodInfo @end
 
-static CFComparisonResult CompareObjCInfos(ObjCInfo *a, ObjCInfo *b) {
+static CFComparisonResult CompareMethodInfos(MethodInfo *a, MethodInfo *b) {
     return (a->impAddr < b->impAddr) ? kCFCompareLessThan : (a->impAddr > b->impAddr) ? kCFCompareGreaterThan : kCFCompareEqualTo;
 }
 
 // NOTE: The code for this function was copied from MachO_File of the Peace project.
-static ObjCInfo *extractObjectiveCInfo(VMUMachOHeader *header, NSArray *inputArray, unsigned long long address) {
-    ObjCInfo *objcInfo = nil;
+NSArray *methodsForImageWithHeader(VMUMachOHeader *header) {
+    NSMutableArray *methods = [NSMutableArray array];
 
-    NSMutableArray *array = [inputArray mutableCopy];
-    if (array == nil) {
-        array = [NSMutableArray array];
+    id<VMUMemoryView> mem = (id<VMUMemoryView>)[[header memory] view];
+    VMUSegmentLoadCommand *dataSeg = [header segmentNamed:@"__DATA"];
+    long long vmdiff_data = [dataSeg fileoff] - [dataSeg vmaddr];
+    VMUSegmentLoadCommand *textSeg = [header segmentNamed:@"__TEXT"];
+    long long vmdiff_text = [textSeg fileoff] - [textSeg vmaddr];
 
-        id<VMUMemoryView> mem = (id<VMUMemoryView>)[[header memory] view];
-        VMUSegmentLoadCommand *dataSeg = [header segmentNamed:@"__DATA"];
-        long long vmdiff_data = [dataSeg fileoff] - [dataSeg vmaddr];
-        VMUSegmentLoadCommand *textSeg = [header segmentNamed:@"__TEXT"];
-        long long vmdiff_text = [textSeg fileoff] - [textSeg vmaddr];
+    VMUSection *clsListSect = [dataSeg sectionNamed:@"__objc_classlist"];
 
-        VMUSection *clsListSect = [dataSeg sectionNamed:@"__objc_classlist"];
+    @try {
+        [mem setCursor:[clsListSect offset]];
+        unsigned size = (unsigned) [clsListSect size];
+        for (unsigned ii = 0; ii < size; ii += 4) {
+            unsigned vm_address = [mem uint32];
+            unsigned long long old_location = [mem cursor];
+            [mem setCursor:vm_address + 16 + vmdiff_data];
+            unsigned data_loc = [mem uint32];
+            [mem setCursor:data_loc + vmdiff_data];
+            unsigned flag = [mem uint32];
+            [mem advanceCursor:12];
+            [mem setCursor:[mem uint32]+vmdiff_text];
 
-        @try {
-            [mem setCursor:[clsListSect offset]];
-            unsigned size = (unsigned) [clsListSect size];
-            for (unsigned ii = 0; ii < size; ii += 4) {
-                unsigned vm_address = [mem uint32];
-                unsigned long long old_location = [mem cursor];
-                [mem setCursor:vm_address + 16 + vmdiff_data];
-                unsigned data_loc = [mem uint32];
-                [mem setCursor:data_loc + vmdiff_data];
-                unsigned flag = [mem uint32];
-                [mem advanceCursor:12];
-                [mem setCursor:[mem uint32]+vmdiff_text];
+            char class_method = (flag & 1) ? '+' : '-';
+            NSString *class_name = [mem stringWithEncoding:NSUTF8StringEncoding];
 
-                char class_method = (flag & 1) ? '+' : '-';
-                NSString *class_name = [mem stringWithEncoding:NSUTF8StringEncoding];
+            [mem setCursor:data_loc + 20 + vmdiff_data];
+            unsigned baseMethod_loc = [mem uint32];
+            if (baseMethod_loc != 0) {
+                [mem setCursor:baseMethod_loc + 4 + vmdiff_data];
+                unsigned count = [mem uint32];
+                for (unsigned j = 0; j < count; ++j) {
+                    MethodInfo *mi = [[MethodInfo alloc] init];
 
-                [mem setCursor:data_loc + 20 + vmdiff_data];
-                unsigned baseMethod_loc = [mem uint32];
-                if (baseMethod_loc != 0) {
-                    [mem setCursor:baseMethod_loc + 4 + vmdiff_data];
-                    unsigned count = [mem uint32];
-                    for (unsigned j = 0; j < count; ++j) {
-                        ObjCInfo *info = [[ObjCInfo alloc] init];
+                    unsigned sel_name_addr = [mem uint32];
+                    [mem uint32];
+                    mi->impAddr = [mem uint32] & ~1;
+                    unsigned long long old_loc_2 = [mem cursor];
+                    [mem setCursor:sel_name_addr + vmdiff_text];
+                    NSString *sel_name = [mem stringWithEncoding:NSUTF8StringEncoding];
+                    [mem setCursor:old_loc_2];
 
-                        unsigned sel_name_addr = [mem uint32];
-                        [mem uint32];
-                        info->impAddr = [mem uint32] & ~1;
-                        unsigned long long old_loc_2 = [mem cursor];
-                        [mem setCursor:sel_name_addr + vmdiff_text];
-                        NSString *sel_name = [mem stringWithEncoding:NSUTF8StringEncoding];
-                        [mem setCursor:old_loc_2];
+                    mi->name = [NSString stringWithFormat:@"%c[%@ %@]", class_method, class_name, sel_name];
 
-                        info->name = [NSString stringWithFormat:@"%c[%@ %@]", class_method, class_name, sel_name];
-
-                        [array addObject:info];
-                        [info release];
-                    }
+                    [methods addObject:mi];
+                    [mi release];
                 }
-
-                [mem setCursor:old_location];
             }
-        } @catch (NSException *exception) {
+
+            [mem setCursor:old_location];
+        }
+    } @catch (NSException *exception) {
 #if DEBUG
-            fprintf(stderr, "Warning: Exception '%s' generated when extracting Objective-C info for %s.\n",
-                    [[exception reason] UTF8String], [[header path] UTF8String]);
+        fprintf(stderr, "Warning: Exception '%s' generated when extracting Objective-C info for %s.\n",
+                [[exception reason] UTF8String], [[header path] UTF8String]);
 #endif
-        }
-
-        [array sortUsingFunction:(NSInteger (*)(id, id, void *))CompareObjCInfos context:NULL];
     }
 
-    CFIndex count = [array count];
-    if (count != 0) {
-        ObjCInfo *info = [[ObjCInfo alloc] init];
-        info->impAddr = address;
-
-        CFIndex objcMatch = CFArrayBSearchValues((CFArrayRef)array, CFRangeMake(0, count), info, (CFComparatorFunction)CompareObjCInfos, NULL);
-        [info release];
-        if (objcMatch >= count) {
-            objcMatch = count - 1;
-        }
-
-        objcInfo = [array objectAtIndex:objcMatch];
-        if (objcInfo->impAddr > address) {
-            objcInfo = (objcMatch == 0) ? nil : [array objectAtIndex:objcMatch - 1];
-        }
-    }
-
-    return objcInfo;
+    [methods sortUsingFunction:(NSInteger (*)(id, id, void *))CompareMethodInfos context:NULL];
+    return methods;
 }
 
 static NSString *escapeHTML(NSString *x, NSCharacterSet *escSet) {
@@ -480,10 +457,28 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             }
                         } else if (!bi->encrypted) {
                             // Try to extract some ObjC info.
-                            ObjCInfo *info = extractObjectiveCInfo(bi->header, bi->objcArray, address);
-                            if (info != nil) {
-                                name = info->name;
-                                offset = address - info->impAddr;
+                            MethodInfo *method = nil;
+                            if (bi->methods == nil) {
+                                bi->methods = methodsForImageWithHeader(bi->header);
+                            }
+                            NSUInteger count = [bi->methods count];
+                            if (count != 0) {
+                                method = [[MethodInfo alloc] init];
+                                method->impAddr = address;
+                                CFIndex indexOfMatch = CFArrayBSearchValues((CFArrayRef)bi->methods, CFRangeMake(0, count), method, (CFComparatorFunction)CompareMethodInfos, NULL);
+                                if (indexOfMatch >= count) {
+                                    indexOfMatch = count - 1;
+                                }
+
+                                [method release];
+                                method = [bi->methods objectAtIndex:indexOfMatch];
+                                if (method->impAddr > address) {
+                                    method = (indexOfMatch != 0) ? [bi->methods objectAtIndex:(indexOfMatch - 1)] : nil;
+                                }
+                            }
+                            if (method != nil) {
+                                name = method->name;
+                                offset = address - method->impAddr;
                             }
                         }
 
