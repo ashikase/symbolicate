@@ -575,8 +575,8 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                 // Write out line of backtrace.
                 NSString *addressString = [[NSString alloc] initWithFormat:@"0x%08llx 0x%08llx + 0x%llx",
                          bti->address, bi->address, bti->address - bi->address];
-                NSString *newLine = [[NSString alloc] initWithFormat:@"%u\t%-30s\t%-32s%@",
-                         bti->depth, [[bi->path lastPathComponent] UTF8String], [addressString UTF8String], lineComment ?: @""];
+                NSString *newLine = [[NSString alloc] initWithFormat:@"%-6u%s%-30s\t%-32s%@",
+                         bti->depth, bi->executable ? "* " : "  ", [[bi->path lastPathComponent] UTF8String], [addressString UTF8String], lineComment ?: @""];
                 [addressString release];
                 [outputLines replaceObjectAtIndex:i withObject:newLine];
                 [newLine release];
