@@ -58,6 +58,7 @@ enum SymbolicationMode {
         NSString *path;
         NSUInteger line;
         BOOL encrypted;
+        BOOL executable;
         BOOL blamable;
 }
 @end
@@ -112,16 +113,16 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
             const load_command *cmd = reinterpret_cast<const load_command *>(data + sizeof(mach_header));
             for (uint32_t j = 0; j < mh->ncmds; ++j) {
                 if (cmd->cmd == LC_FUNCTION_STARTS) {
-                    const linkedit_data_command *functionStarts = reinterpret_cast<const linkedit_data_command *>(cmd);
-                    const uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
-                    const uint8_t *start = data + textStart + functionStarts->dataoff;
-                    const uint8_t *end = start + functionStarts->datasize;
-                    uint64_t offset;
-                    uint64_t symbolAddress = 0;
-                    while ((offset = read_uleb128(&start, end))) {
-                        symbolAddress += offset;
-                        [addresses addObject:[NSNumber numberWithUnsignedLongLong:symbolAddress]];
-                    }
+        const linkedit_data_command *functionStarts = reinterpret_cast<const linkedit_data_command *>(cmd);
+        const uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
+        const uint8_t *start = data + textStart + functionStarts->dataoff;
+        const uint8_t *end = start + functionStarts->datasize;
+        uint64_t offset;
+        uint64_t symbolAddress = 0;
+        while ((offset = read_uleb128(&start, end))) {
+            symbolAddress += offset;
+            [addresses addObject:[NSNumber numberWithUnsignedLongLong:symbolAddress]];
+        }
                     break;
                 }
                 cmd = reinterpret_cast<const load_command *>((uint8_t *)cmd + cmd->cmdsize);
@@ -429,6 +430,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                                 break;
                             }
                         }
+                        bi->executable = ([header fileType] == MH_EXECUTE);
                     }
 
                     // Determine if binary image should not be blamed.
@@ -520,18 +522,20 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             }
                         } else if (!bi->encrypted) {
                             // Try to extract some ObjC info.
+                            unsigned long long pageZeroOffset = bi->executable ? [[bi->header segmentNamed:@"__TEXT"] vmaddr] : 0;
+
                             unsigned long long symbolAddress = 0;
                             if (bi->symbolAddresses == nil) {
                                 bi->symbolAddresses = symbolAddressesForImageWithHeader(bi->header);
                             }
                             NSUInteger count = [bi->symbolAddresses count];
                             if (count != 0) {
-                                NSNumber *targetAddress = [[NSNumber alloc] initWithUnsignedLongLong:address];
+                                NSNumber *targetAddress = [[NSNumber alloc] initWithUnsignedLongLong:(address - pageZeroOffset)];
                                 CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->symbolAddresses, CFRangeMake(0, count), targetAddress, (CFComparatorFunction)ReversedCompareNSNumber, NULL);
                                 [targetAddress release];
 
                                 if (matchIndex < count) {
-                                    symbolAddress = [[bi->symbolAddresses objectAtIndex:matchIndex] unsignedLongLongValue];
+                                    symbolAddress = [[bi->symbolAddresses objectAtIndex:matchIndex] unsignedLongLongValue] + pageZeroOffset;
                                 }
                             }
 
@@ -556,7 +560,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                                     name = method->name;
                                     offset = address - method->impAddr;
                                 } else {
-                                    name = [NSString stringWithFormat:@"0x%08llx", symbolAddress];
+                                    name = [NSString stringWithFormat:@"0x%08llx", (symbolAddress - pageZeroOffset)];
                                     offset = address - symbolAddress;
                                 }
                             }

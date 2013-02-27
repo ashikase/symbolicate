@@ -22,6 +22,7 @@ typedef struct _VMURange {
 @interface VMULoadCommand : NSObject @end
 @interface VMUMachOHeader : VMUHeader
 - (unsigned long long)address;
+- (unsigned)fileType;
 - (BOOL)isFromSharedCache;
 - (id)loadCommands;
 - (id)memory;
