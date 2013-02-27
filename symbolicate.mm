@@ -521,7 +521,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                                 }
                             }
                         } else if (!bi->encrypted) {
-                            // Try to extract some ObjC info.
+                            // Determine symbol addresses and attempt to match with Objective-C methods
                             unsigned long long pageZeroOffset = bi->executable ? [[bi->header segmentNamed:@"__TEXT"] vmaddr] : 0;
 
                             unsigned long long symbolAddress = 0;
