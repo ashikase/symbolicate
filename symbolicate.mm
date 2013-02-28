@@ -242,7 +242,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     NSMutableArray *outputLines = [[NSMutableArray alloc] init];
     BOOL shouldNotifyOfProgress = (progressStepping > 0 && progressStepping < 100);
 
-    NSDictionary *whiteListFile = [[NSDictionary alloc] initWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"whitelist" ofType:@"plist"]];
+    NSDictionary *whiteListFile = [[NSDictionary alloc] initWithContentsOfFile:@"/etc/symbolicate/whitelist.plist"];
     NSSet *filters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"Filters"]];
     NSSet *functionFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"FunctionFilters"]];
     NSSet *reverseFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"ReverseFunctionFilters"]];
