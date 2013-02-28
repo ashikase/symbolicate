@@ -113,16 +113,16 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
             const load_command *cmd = reinterpret_cast<const load_command *>(data + sizeof(mach_header));
             for (uint32_t j = 0; j < mh->ncmds; ++j) {
                 if (cmd->cmd == LC_FUNCTION_STARTS) {
-        const linkedit_data_command *functionStarts = reinterpret_cast<const linkedit_data_command *>(cmd);
-        const uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
-        const uint8_t *start = data + textStart + functionStarts->dataoff;
-        const uint8_t *end = start + functionStarts->datasize;
-        uint64_t offset;
-        uint64_t symbolAddress = 0;
-        while ((offset = read_uleb128(&start, end))) {
-            symbolAddress += offset;
-            [addresses addObject:[NSNumber numberWithUnsignedLongLong:symbolAddress]];
-        }
+                    const linkedit_data_command *functionStarts = reinterpret_cast<const linkedit_data_command *>(cmd);
+                    const uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
+                    const uint8_t *start = data + textStart + functionStarts->dataoff;
+                    const uint8_t *end = start + functionStarts->datasize;
+                    uint64_t offset;
+                    uint64_t symbolAddress = 0;
+                    while ((offset = read_uleb128(&start, end))) {
+                        symbolAddress += offset;
+                        [addresses addObject:[NSNumber numberWithUnsignedLongLong:symbolAddress]];
+                    }
                     break;
                 }
                 cmd = reinterpret_cast<const load_command *>((uint8_t *)cmd + cmd->cmdsize);
@@ -138,64 +138,78 @@ static CFComparisonResult ReversedCompareMethodInfos(MethodInfo *a, MethodInfo *
     return (a->impAddr > b->impAddr) ? kCFCompareLessThan : (a->impAddr < b->impAddr) ? kCFCompareGreaterThan : kCFCompareEqualTo;
 }
 
-// NOTE: The code for this function was copied from MachO_File of the Peace project.
+#define RO_META     (1 << 0)
+#define RW_REALIZED (1 << 31)
+
 NSArray *methodsForImageWithHeader(VMUMachOHeader *header) {
     NSMutableArray *methods = [NSMutableArray array];
 
-    id<VMUMemoryView> mem = (id<VMUMemoryView>)[[header memory] view];
     VMUSegmentLoadCommand *dataSeg = [header segmentNamed:@"__DATA"];
     long long vmdiff_data = [dataSeg fileoff] - [dataSeg vmaddr];
+
     VMUSegmentLoadCommand *textSeg = [header segmentNamed:@"__TEXT"];
     long long vmdiff_text = [textSeg fileoff] - [textSeg vmaddr];
 
+    id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
     VMUSection *clsListSect = [dataSeg sectionNamed:@"__objc_classlist"];
-
     @try {
-        [mem setCursor:[clsListSect offset]];
-        unsigned size = (unsigned) [clsListSect size];
-        for (unsigned ii = 0; ii < size; ii += 4) {
-            unsigned vm_address = [mem uint32];
-            unsigned long long old_location = [mem cursor];
-            [mem setCursor:vm_address + 16 + vmdiff_data];
-            unsigned data_loc = [mem uint32];
-            [mem setCursor:data_loc + vmdiff_data];
-            unsigned flag = [mem uint32];
-            [mem advanceCursor:12];
-            [mem setCursor:[mem uint32]+vmdiff_text];
+        [view setCursor:[clsListSect offset]];
+        uint64_t numClasses = [clsListSect size] / sizeof(uint32_t);
+        for (uint64_t i = 0; i < numClasses; ++i) {
+            uint32_t class_t_address = [view uint32];
+            uint64_t next_class_t = [view cursor];
+            [view setCursor:vmdiff_data + class_t_address];
 
-            char class_method = (flag & 1) ? '+' : '-';
-            NSString *class_name = [mem stringWithEncoding:NSUTF8StringEncoding];
+process_class:
+            // Get address for meta class.
+            // NOTE: This is needed for retrieving class (non-instance) methods.
+            uint32_t isa = [view uint32];
+            [view advanceCursor:12];
 
-            [mem setCursor:data_loc + 20 + vmdiff_data];
-            unsigned baseMethod_loc = [mem uint32];
-            if (baseMethod_loc != 0) {
-                [mem setCursor:baseMethod_loc + 4 + vmdiff_data];
-                unsigned count = [mem uint32];
-                for (unsigned j = 0; j < count; ++j) {
-                    MethodInfo *mi = [[MethodInfo alloc] init];
+            // Confirm struct is actually class_ro_t (and not class_rw_t).
+            uint32_t class_ro_t_address = [view uint32];
+            [view setCursor:vmdiff_data + class_ro_t_address];
+            uint32_t flags = [view uint32];
+            if (!(flags & RW_REALIZED)) {
+                char methodType = (flags & 1) ? '+' : '-';
 
-                    unsigned sel_name_addr = [mem uint32];
-                    [mem uint32];
-                    mi->impAddr = [mem uint32] & ~1;
-                    unsigned long long old_loc_2 = [mem cursor];
-                    [mem setCursor:sel_name_addr + vmdiff_text];
-                    NSString *sel_name = [mem stringWithEncoding:NSUTF8StringEncoding];
-                    [mem setCursor:old_loc_2];
+                [view advanceCursor:12];
+                [view setCursor:vmdiff_text + [view uint32]];
+                NSString *className = [view stringWithEncoding:NSUTF8StringEncoding];
 
-                    mi->name = [NSString stringWithFormat:@"%c[%@ %@]", class_method, class_name, sel_name];
-
-                    [methods addObject:mi];
-                    [mi release];
+                [view setCursor:vmdiff_data + class_ro_t_address + 20];
+                uint32_t baseMethods = [view uint32];
+                if (baseMethods != 0) {
+                    [view setCursor:vmdiff_data + baseMethods];
+                    uint32_t entsize = [view uint32];
+                    if (entsize == 12) {
+                        uint32_t count = [view uint32];
+                        for (uint32_t j = 0; j < count; ++j) {
+                            MethodInfo *mi = [[MethodInfo alloc] init];
+                            uint32_t sel = [view uint32];
+                            uint64_t loc = [view cursor];
+                            [view setCursor:vmdiff_text + sel];
+                            NSString *methodName = [view stringWithEncoding:NSUTF8StringEncoding];
+                            mi->name = [NSString stringWithFormat:@"%c[%@ %@]", methodType, className, methodName];
+                            [view setCursor:loc];
+                            [view uint32];
+                            mi->impAddr = [view uint32] & ~1;
+                            [methods addObject:mi];
+                            [mi release];
+                        }
+                    }
                 }
             }
-
-            [mem setCursor:old_location];
+            if (!(flags & RO_META)) {
+                [view setCursor:vmdiff_data + isa];
+                goto process_class;
+            } else {
+                [view setCursor:next_class_t];
+            }
         }
     } @catch (NSException *exception) {
-#if DEBUG
-        fprintf(stderr, "Warning: Exception '%s' generated when extracting Objective-C info for %s.\n",
+        fprintf(stderr, "WARNING: Exception '%s' generated when extracting methods for %s.\n",
                 [[exception reason] UTF8String], [[header path] UTF8String]);
-#endif
     }
 
     [methods sortUsingFunction:(NSInteger (*)(id, id, void *))ReversedCompareMethodInfos context:NULL];
