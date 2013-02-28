@@ -245,9 +245,9 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     NSDictionary *whiteListFile = [[NSDictionary alloc] initWithContentsOfFile:@"/etc/symbolicate/whitelist.plist"];
     NSSet *filters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"Filters"]];
     NSSet *functionFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"FunctionFilters"]];
+    NSArray *prefixFilters = [[whiteListFile objectForKey:@"PrefixFilters"] retain];
     NSSet *reverseFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"ReverseFunctionFilters"]];
-    NSArray *prefixFilters = [whiteListFile objectForKey:@"PrefixFilters"];
-    NSArray *signalFilters = [whiteListFile objectForKey:@"SignalFilters"];
+    NSArray *signalFilters = [[whiteListFile objectForKey:@"SignalFilters"] retain];
     [whiteListFile release];
 
     enum SymbolicationMode mode = SM_CheckingMode;
@@ -604,7 +604,9 @@ skip_this_line:
     [extraInfoArray release];
     [filters release];
     [functionFilters release];
+    [prefixFilters release];
     [reverseFilters release];
+    [signalFilters release];
 
     /*
     if (isFilteredSignal) {
