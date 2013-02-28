@@ -30,6 +30,7 @@ typedef struct _VMURange {
 - (id)segmentNamed:(id)named;
 @end
 @protocol VMUMemory <NSObject>
+- (VMURange)addressRange;
 - (id)view;
 @end
 @protocol VMUMemoryView <NSObject>
@@ -43,7 +44,6 @@ typedef struct _VMURange {
 @interface VMUMemory_File : VMUMemory_Base <VMUMemory>
 + (id)headerFromSharedCacheWithPath:(id)path;
 + (id)headerWithPath:(id)path;
-- (VMURange)addressRange;
 - (void)buildSharedCacheMap;
 - (id)initWithPath:(id)path fileRange:(VMURange)range mapToAddress:(unsigned long long)address architecture:(id)architecture;
 @end
