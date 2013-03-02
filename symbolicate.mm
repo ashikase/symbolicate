@@ -72,6 +72,30 @@ enum SymbolicationMode {
 @end
 @implementation MethodInfo @end
 
+static BOOL isEncrypted(VMUMachOHeader *header) {
+    BOOL isEncrypted = NO;
+
+    uint64_t cmdsize = 0;
+    Ivar ivar = class_getInstanceVariable([VMULoadCommand class], "_command");
+    for (VMULoadCommand *lc in [header loadCommands]) {
+        uint32_t cmd = (uint32_t)object_getIvar(lc, ivar);
+        if (cmd == LC_ENCRYPTION_INFO) {
+            id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
+            @try {
+                [view setCursor:sizeof(mach_header) + cmdsize + 16];
+                isEncrypted = ([view uint32] > 0);
+            } @catch (NSException *exception) {
+                fprintf(stderr, "WARNING: Exception '%s' generated when determining encryption status for %s.\n",
+                        [[exception reason] UTF8String], [[header path] UTF8String]);
+            }
+            break;
+        }
+        cmdsize += [lc cmdSize];
+    }
+
+    return isEncrypted;
+}
+
 static CFComparisonResult ReversedCompareNSNumber(NSNumber *a, NSNumber *b) {
     return [b compare:a];
 }
@@ -342,8 +366,6 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     NSUInteger total_lines = [extraInfoArray count];
     int last_percent = 0;
 
-    Ivar _command_ivar = class_getInstanceVariable([VMULoadCommand class], "_command");
-
     // Prepare array of image start addresses for determining symbols of exception.
     NSArray *imageAddresses = nil;
     if (hasLastExceptionBacktrace) {
@@ -413,12 +435,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         bi->slide = textStart - bi->address;
                         bi->owner = [VMUSymbolExtractor extractSymbolOwnerFromHeader:header];
                         bi->header = header;
-                        for (VMULoadCommand *lc in [header loadCommands]) {
-                            if ((int)object_getIvar(lc, _command_ivar) == LC_ENCRYPTION_INFO) {
-                                bi->encrypted = YES;
-                                break;
-                            }
-                        }
+                        bi->encrypted = isEncrypted(bi->header);
                         bi->executable = ([header fileType] == MH_EXECUTE);
                     }
 
