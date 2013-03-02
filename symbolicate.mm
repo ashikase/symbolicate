@@ -114,15 +114,15 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
             for (uint32_t j = 0; j < mh->ncmds; ++j) {
                 if (cmd->cmd == LC_FUNCTION_STARTS) {
                     const linkedit_data_command *functionStarts = reinterpret_cast<const linkedit_data_command *>(cmd);
-                    const uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
+                const uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
                     const uint8_t *start = data + textStart + functionStarts->dataoff;
                     const uint8_t *end = start + functionStarts->datasize;
-                    uint64_t offset;
-                    uint64_t symbolAddress = 0;
+                uint64_t offset;
+                uint64_t symbolAddress = 0;
                     while ((offset = read_uleb128(&start, end))) {
-                        symbolAddress += offset;
-                        [addresses addObject:[NSNumber numberWithUnsignedLongLong:symbolAddress]];
-                    }
+                    symbolAddress += offset;
+                    [addresses addObject:[NSNumber numberWithUnsignedLongLong:symbolAddress]];
+                }
                     break;
                 }
                 cmd = reinterpret_cast<const load_command *>((uint8_t *)cmd + cmd->cmdsize);
@@ -590,7 +590,9 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                 NSString *addressString = [[NSString alloc] initWithFormat:@"0x%08llx 0x%08llx + 0x%llx",
                          bti->address, bi->address, bti->address - bi->address];
                 NSString *newLine = [[NSString alloc] initWithFormat:@"%-6u%s%-30s\t%-32s%@",
-                         bti->depth, bi->executable ? "* " : "  ", [[bi->path lastPathComponent] UTF8String], [addressString UTF8String], lineComment ?: @""];
+                         bti->depth, bi->blamable ? "+ " : "  ",
+                         [[[bi->path lastPathComponent] stringByAppendingString:(bi->executable ? @" (*)" : @"")] UTF8String],
+                         [addressString UTF8String], lineComment ?: @""];
                 [addressString release];
                 [outputLines replaceObjectAtIndex:i withObject:newLine];
                 [newLine release];
