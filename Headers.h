@@ -19,7 +19,9 @@ typedef struct _VMURange {
 @interface VMUHeader : NSObject
 + (id)extractMachOHeadersFromHeader:(id)header matchingArchitecture:(id)architecture considerArchives:(BOOL)archives;
 @end
-@interface VMULoadCommand : NSObject @end
+@interface VMULoadCommand : NSObject
+- (unsigned long long)cmdSize;
+@end
 @interface VMUMachOHeader : VMUHeader
 - (unsigned long long)address;
 - (unsigned)fileType;
@@ -39,6 +41,7 @@ typedef struct _VMURange {
 - (void)setCursor:(unsigned long long)cursor;
 - (id)stringWithEncoding:(unsigned)encoding;
 - (unsigned)uint32;
+- (unsigned long long)ULEB128;
 @end
 @interface VMUMemory_Base : NSObject @end
 @interface VMUMemory_File : VMUMemory_Base <VMUMemory>

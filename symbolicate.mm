@@ -72,31 +72,6 @@ enum SymbolicationMode {
 @end
 @implementation MethodInfo @end
 
-static uint64_t read_uleb128(const uint8_t **buf, const uint8_t *buf_end) {
-    uint64_t result = 0;
-
-    const uint8_t *p = *buf;
-    uint8_t byte;
-    unsigned shift = 0;
-    do {
-        if (p >= buf_end) {
-            fprintf(stderr, "WARNING: Bounds failure in read_uleb128().\n");
-            return 0;
-        }
-
-        byte = *p++;
-        if (shift >= 64 || (byte << shift >> shift) != byte) {
-            fprintf(stderr, "WARNING: Read value larger than 64-bits in read_uleb128().\n");
-            return 0;
-        } else {
-            result |= (byte & 0x7f) << shift;
-            shift += 7;
-        }
-    } while ((byte & 0x80) != 0);
-    *buf = p;
-    return result;
-}
-
 static CFComparisonResult ReversedCompareNSNumber(NSNumber *a, NSNumber *b) {
     return [b compare:a];
 }
@@ -104,30 +79,30 @@ static CFComparisonResult ReversedCompareNSNumber(NSNumber *a, NSNumber *b) {
 static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
     NSMutableArray *addresses = [NSMutableArray array];
 
-    VMUMemory_Handle *memory = [header memory];
-    Ivar ivar = class_getInstanceVariable([VMUMemory_Handle class], "_data");
-    const uint8_t *data = reinterpret_cast<const uint8_t *>(object_getIvar(memory, ivar));
-    if (data != NULL) {
-        const mach_header *mh = reinterpret_cast<const mach_header *>(data);
-        if (mh->magic == MH_MAGIC) {
-            const load_command *cmd = reinterpret_cast<const load_command *>(data + sizeof(mach_header));
-            for (uint32_t j = 0; j < mh->ncmds; ++j) {
-                if (cmd->cmd == LC_FUNCTION_STARTS) {
-                    const linkedit_data_command *functionStarts = reinterpret_cast<const linkedit_data_command *>(cmd);
+    uint64_t cmdsize = 0;
+    Ivar ivar = class_getInstanceVariable([VMULoadCommand class], "_command");
+    for (VMULoadCommand *lc in [header loadCommands]) {
+        uint32_t cmd = (uint32_t)object_getIvar(lc, ivar);
+        if (cmd == LC_FUNCTION_STARTS) {
+            id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
+            @try {
+                [view setCursor:sizeof(mach_header) + cmdsize + 8];
+                uint32_t dataoff = [view uint32];
                 const uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
-                    const uint8_t *start = data + textStart + functionStarts->dataoff;
-                    const uint8_t *end = start + functionStarts->datasize;
+                [view setCursor:textStart + dataoff];
                 uint64_t offset;
                 uint64_t symbolAddress = 0;
-                    while ((offset = read_uleb128(&start, end))) {
+                while ((offset = [view ULEB128])) {
                     symbolAddress += offset;
                     [addresses addObject:[NSNumber numberWithUnsignedLongLong:symbolAddress]];
                 }
-                    break;
-                }
-                cmd = reinterpret_cast<const load_command *>((uint8_t *)cmd + cmd->cmdsize);
+            } @catch (NSException *exception) {
+                fprintf(stderr, "WARNING: Exception '%s' generated when extracting symbol addresses for %s.\n",
+                        [[exception reason] UTF8String], [[header path] UTF8String]);
             }
+            break;
         }
+        cmdsize += [lc cmdSize];
     }
 
     [addresses sortUsingFunction:(NSInteger (*)(id, id, void *))ReversedCompareNSNumber context:NULL];
