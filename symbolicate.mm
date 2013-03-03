@@ -92,7 +92,7 @@ static BOOL isEncrypted(VMUMachOHeader *header) {
     if (offset != 0) {
         id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
         @try {
-            [view setCursor:offset + 16];
+            [view setCursor:[header address] + offset + 16];
             isEncrypted = ([view uint32] > 0);
         } @catch (NSException *exception) {
             fprintf(stderr, "WARNING: Exception '%s' generated when determining encryption status for %s.\n",
@@ -114,13 +114,11 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
     if (offset != 0) {
         id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
         @try {
-            [view setCursor:offset + 8];
+            [view setCursor:[header address] + offset + 8];
             uint32_t dataoff = [view uint32];
-            uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
-            uint64_t pageZeroOffset = ([header fileType] == MH_EXECUTE) ? textStart : 0;
-            [view setCursor:-pageZeroOffset + textStart + dataoff];
+            [view setCursor:dataoff];
             uint64_t offset;
-            uint64_t symbolAddress = 0;
+            uint64_t symbolAddress = [[header segmentNamed:@"__TEXT"] vmaddr];
             while ((offset = [view ULEB128])) {
                 symbolAddress += offset;
                 [addresses addObject:[NSNumber numberWithUnsignedLongLong:symbolAddress]];
@@ -547,21 +545,21 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                                 }
                             }
 
-                            MethodInfo *method = nil;
-                            if (bi->methods == nil) {
-                                bi->methods = methodsForImageWithHeader(bi->header);
-                            }
-                            count = [bi->methods count];
-                            if (count != 0) {
-                                MethodInfo *targetMethod = [[MethodInfo alloc] init];
-                                targetMethod->address = address;
-                                CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->methods, CFRangeMake(0, count), targetMethod, (CFComparatorFunction)ReversedCompareMethodInfos, NULL);
-                                [targetMethod release];
-
-                                if (matchIndex < count) {
-                                    method = [bi->methods objectAtIndex:matchIndex];
+                                MethodInfo *method = nil;
+                                if (bi->methods == nil) {
+                                    bi->methods = methodsForImageWithHeader(bi->header);
                                 }
-                            }
+                                count = [bi->methods count];
+                                if (count != 0) {
+                                    MethodInfo *targetMethod = [[MethodInfo alloc] init];
+                                    targetMethod->address = address;
+                                    CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->methods, CFRangeMake(0, count), targetMethod, (CFComparatorFunction)ReversedCompareMethodInfos, NULL);
+                                    [targetMethod release];
+
+                                    if (matchIndex < count) {
+                                        method = [bi->methods objectAtIndex:matchIndex];
+                                    }
+                                }
 
                             if (symbolAddress != 0) {
                                 if (method != nil && method->address >= symbolAddress) {
