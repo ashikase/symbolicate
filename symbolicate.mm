@@ -116,8 +116,9 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
         @try {
             [view setCursor:offset + 8];
             uint32_t dataoff = [view uint32];
-            const uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
-            [view setCursor:textStart + dataoff];
+            uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
+            uint64_t pageZeroOffset = ([header fileType] == MH_EXECUTE) ? textStart : 0;
+            [view setCursor:-pageZeroOffset + textStart + dataoff];
             uint64_t offset;
             uint64_t symbolAddress = 0;
             while ((offset = [view ULEB128])) {
