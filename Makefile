@@ -14,7 +14,7 @@ symbolicate_PRIVATE_FRAMEWORKS = Symbolication
 ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\"
 
 TARGET = iphone:3.0
-ARCHS =
+#ARCHS =
 #SDKTARGET = arm-apple-darwin11
 #TARGET_CXX = clang -ccc-host-triple $(SDKTARGET)
 #TARGET_LD = $(SDKTARGET)-g++
