@@ -66,7 +66,7 @@ enum SymbolicationMode {
 
 @interface MethodInfo : NSObject {
     @package
-        unsigned long long impAddr;
+        unsigned long long address;
         NSString *name;
 }
 @end
@@ -136,7 +136,7 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
 }
 
 static CFComparisonResult ReversedCompareMethodInfos(MethodInfo *a, MethodInfo *b) {
-    return (a->impAddr > b->impAddr) ? kCFCompareLessThan : (a->impAddr < b->impAddr) ? kCFCompareGreaterThan : kCFCompareEqualTo;
+    return (a->address > b->address) ? kCFCompareLessThan : (a->address < b->address) ? kCFCompareGreaterThan : kCFCompareEqualTo;
 }
 
 #define RO_META     (1 << 0)
@@ -194,7 +194,7 @@ process_class:
                             mi->name = [NSString stringWithFormat:@"%c[%@ %@]", methodType, className, methodName];
                             [view setCursor:loc];
                             [view uint32];
-                            mi->impAddr = [view uint32];
+                            mi->address = [view uint32];
                             [methods addObject:mi];
                             [mi release];
                         }
@@ -554,7 +554,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             count = [bi->methods count];
                             if (count != 0) {
                                 MethodInfo *targetMethod = [[MethodInfo alloc] init];
-                                targetMethod->impAddr = address;
+                                targetMethod->address = address;
                                 CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->methods, CFRangeMake(0, count), targetMethod, (CFComparatorFunction)ReversedCompareMethodInfos, NULL);
                                 [targetMethod release];
 
@@ -564,9 +564,9 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             }
 
                             if (symbolAddress != 0) {
-                                if (method != nil && method->impAddr >= symbolAddress) {
+                                if (method != nil && method->address >= symbolAddress) {
                                     name = method->name;
-                                    offset = address - method->impAddr;
+                                    offset = address - method->address;
                                 } else {
                                     name = [NSString stringWithFormat:@"0x%08llx", (symbolAddress - pageZeroOffset)];
                                     offset = address - symbolAddress;
