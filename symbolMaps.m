@@ -1,8 +1,31 @@
 #import "symbolMaps.h"
 
 #import "RegexKitLite.h"
-#include "bzlib.h"
 #include "common.h"
+
+// NOTE: It seems that older SDKs (iOS 3.0 and earlier?) do not include bzlib.h.
+//#include <bzlib.h>
+#define BZ_OK 0
+#define BZ_STREAM_END 4
+
+typedef struct {
+    char *next_in;
+    unsigned int avail_in;
+    unsigned int total_in_lo32;
+    unsigned int total_in_hi32;
+    char *next_out;
+    unsigned int avail_out;
+    unsigned int total_out_lo32;
+    unsigned int total_out_hi32;
+    void *state;
+    void *(*bzalloc)(void *,int,int);
+    void (*bzfree)(void *,void *);
+    void *opaque;
+} bz_stream;
+
+extern int BZ2_bzDecompressInit(bz_stream *strm, int verbosity, int small);
+extern int BZ2_bzDecompress(bz_stream* strm);
+extern int BZ2_bzDecompressEnd(bz_stream *strm);
 
 static NSData *bunzip2(NSData *inputData) {
     NSMutableData *outputData = [NSMutableData data];
