@@ -437,6 +437,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         bi->header = header;
                         bi->encrypted = isEncrypted(bi->header);
                         bi->executable = ([header fileType] == MH_EXECUTE);
+                        bi->symbolAddresses = symbolAddressesForImageWithHeader(header);
                     }
 
                     // Determine if binary image should not be blamed.
@@ -481,12 +482,24 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         // Add source file name and line number.
                         lineComment = [NSString stringWithFormat:@"\t// %@:%u", escapeHTML([srcInfo path], escSet), [srcInfo lineNumber]];
                     } else {
-                        NSString *name = nil;
-                        unsigned long long offset = 0;
+                        // Determine symbol address.
+                        // NOTE: Only possible if LC_FUNCTION_STARTS exists in the binary.
+                        unsigned long long symbolAddress = 0;
+                        NSUInteger count = [bi->symbolAddresses count];
+                        if (count != 0) {
+                            NSNumber *targetAddress = [[NSNumber alloc] initWithUnsignedLongLong:address];
+                            CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->symbolAddresses, CFRangeMake(0, count), targetAddress, (CFComparatorFunction)ReversedCompareNSNumber, NULL);
+                            [targetAddress release];
+                            if (matchIndex < count) {
+                                symbolAddress = [[bi->symbolAddresses objectAtIndex:matchIndex] unsignedLongLongValue];
+                            }
+                        }
 
                         // Attempt to add symbol name and hex offset.
+                        NSString *name = nil;
+                        unsigned long long offset = 0;
                         VMUSymbol *symbol = [bi->owner symbolForAddress:address];
-                        if (symbol != nil) {
+                        if (symbol != nil && ([symbol addressRange].location == (symbolAddress & ~1) || symbolAddress == 0)) {
                             if (alreadySymbolicated) {
                                 goto skip_this_line;
                             }
@@ -519,32 +532,16 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             offset = address - [symbol addressRange].location;
                         } else if (NSDictionary *map = [symbolMaps objectForKey:bi->path]) {
                             for (NSNumber *number in [[[map allKeys] sortedArrayUsingSelector:@selector(compare:)] reverseObjectEnumerator]) {
-                                unsigned long long symbolAddress = [number unsignedLongLongValue];
-                                if (address > symbolAddress) {
+                                unsigned long long mapSymbolAddress = [number unsignedLongLongValue];
+                                if (address > mapSymbolAddress) {
                                     name = demangle([map objectForKey:number]);
-                                    offset = address - symbolAddress;
+                                    offset = address - mapSymbolAddress;
                                     break;
                                 }
                             }
                         } else if (!bi->encrypted) {
-                            // Determine symbol addresses and attempt to match with Objective-C methods
-                            unsigned long long pageZeroOffset = bi->executable ? [[bi->header segmentNamed:@"__TEXT"] vmaddr] : 0;
-
-                            unsigned long long symbolAddress = 0;
-                            if (bi->symbolAddresses == nil) {
-                                bi->symbolAddresses = symbolAddressesForImageWithHeader(bi->header);
-                            }
-                            NSUInteger count = [bi->symbolAddresses count];
-                            if (count != 0) {
-                                NSNumber *targetAddress = [[NSNumber alloc] initWithUnsignedLongLong:(address - pageZeroOffset)];
-                                CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->symbolAddresses, CFRangeMake(0, count), targetAddress, (CFComparatorFunction)ReversedCompareNSNumber, NULL);
-                                [targetAddress release];
-
-                                if (matchIndex < count) {
-                                    symbolAddress = [[bi->symbolAddresses objectAtIndex:matchIndex] unsignedLongLongValue] + pageZeroOffset;
-                                }
-                            }
-
+                            // Determine methods, attempt to match with symbol address.
+                            if (symbolAddress != 0) {
                                 MethodInfo *method = nil;
                                 if (bi->methods == nil) {
                                     bi->methods = methodsForImageWithHeader(bi->header);
@@ -561,12 +558,12 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                                     }
                                 }
 
-                            if (symbolAddress != 0) {
                                 if (method != nil && method->address >= symbolAddress) {
                                     name = method->name;
                                     offset = address - method->address;
                                 } else {
-                                    name = [NSString stringWithFormat:@"0x%08llx", (symbolAddress - pageZeroOffset)];
+                                    unsigned long long textStart = [[bi->header segmentNamed:@"__TEXT"] vmaddr];
+                                    name = [NSString stringWithFormat:@"0x%08llx", (symbolAddress - textStart)];
                                     offset = address - symbolAddress;
                                 }
                             }
