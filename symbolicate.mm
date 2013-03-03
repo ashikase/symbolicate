@@ -72,25 +72,32 @@ enum SymbolicationMode {
 @end
 @implementation MethodInfo @end
 
-static BOOL isEncrypted(VMUMachOHeader *header) {
-    BOOL isEncrypted = NO;
-
+static uint64_t linkCommandOffsetForHeader(VMUMachOHeader *header, uint64_t linkCommand) {
     uint64_t cmdsize = 0;
     Ivar ivar = class_getInstanceVariable([VMULoadCommand class], "_command");
     for (VMULoadCommand *lc in [header loadCommands]) {
         uint32_t cmd = (uint32_t)object_getIvar(lc, ivar);
-        if (cmd == LC_ENCRYPTION_INFO) {
-            id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
-            @try {
-                [view setCursor:sizeof(mach_header) + cmdsize + 16];
-                isEncrypted = ([view uint32] > 0);
-            } @catch (NSException *exception) {
-                fprintf(stderr, "WARNING: Exception '%s' generated when determining encryption status for %s.\n",
-                        [[exception reason] UTF8String], [[header path] UTF8String]);
-            }
-            break;
+        if (cmd == linkCommand) {
+            return sizeof(mach_header) + cmdsize;
         }
         cmdsize += [lc cmdSize];
+    }
+    return 0;
+}
+
+static BOOL isEncrypted(VMUMachOHeader *header) {
+    BOOL isEncrypted = NO;
+
+    uint64_t offset = linkCommandOffsetForHeader(header, LC_ENCRYPTION_INFO);
+    if (offset != 0) {
+        id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
+        @try {
+            [view setCursor:offset + 16];
+            isEncrypted = ([view uint32] > 0);
+        } @catch (NSException *exception) {
+            fprintf(stderr, "WARNING: Exception '%s' generated when determining encryption status for %s.\n",
+                    [[exception reason] UTF8String], [[header path] UTF8String]);
+        }
     }
 
     return isEncrypted;
@@ -103,30 +110,24 @@ static CFComparisonResult ReversedCompareNSNumber(NSNumber *a, NSNumber *b) {
 static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
     NSMutableArray *addresses = [NSMutableArray array];
 
-    uint64_t cmdsize = 0;
-    Ivar ivar = class_getInstanceVariable([VMULoadCommand class], "_command");
-    for (VMULoadCommand *lc in [header loadCommands]) {
-        uint32_t cmd = (uint32_t)object_getIvar(lc, ivar);
-        if (cmd == LC_FUNCTION_STARTS) {
-            id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
-            @try {
-                [view setCursor:sizeof(mach_header) + cmdsize + 8];
-                uint32_t dataoff = [view uint32];
-                const uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
-                [view setCursor:textStart + dataoff];
-                uint64_t offset;
-                uint64_t symbolAddress = 0;
-                while ((offset = [view ULEB128])) {
-                    symbolAddress += offset;
-                    [addresses addObject:[NSNumber numberWithUnsignedLongLong:symbolAddress]];
-                }
-            } @catch (NSException *exception) {
-                fprintf(stderr, "WARNING: Exception '%s' generated when extracting symbol addresses for %s.\n",
-                        [[exception reason] UTF8String], [[header path] UTF8String]);
+    uint64_t offset = linkCommandOffsetForHeader(header, LC_FUNCTION_STARTS);
+    if (offset != 0) {
+        id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
+        @try {
+            [view setCursor:offset + 8];
+            uint32_t dataoff = [view uint32];
+            const uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
+            [view setCursor:textStart + dataoff];
+            uint64_t offset;
+            uint64_t symbolAddress = 0;
+            while ((offset = [view ULEB128])) {
+                symbolAddress += offset;
+                [addresses addObject:[NSNumber numberWithUnsignedLongLong:symbolAddress]];
             }
-            break;
+        } @catch (NSException *exception) {
+            fprintf(stderr, "WARNING: Exception '%s' generated when extracting symbol addresses for %s.\n",
+                    [[exception reason] UTF8String], [[header path] UTF8String]);
         }
-        cmdsize += [lc cmdSize];
     }
 
     [addresses sortUsingFunction:(NSInteger (*)(id, id, void *))ReversedCompareNSNumber context:NULL];
