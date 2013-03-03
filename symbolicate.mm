@@ -237,7 +237,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
         return nil;
     }
 
-    NSArray *inputLines = [content componentsSeparatedByString:@"\n"];
+    NSArray *inputLines = [[content stringByReplacingOccurrencesOfString:@"\r" withString:@""] componentsSeparatedByString:@"\n"];
     NSMutableArray *outputLines = [[NSMutableArray alloc] init];
     BOOL shouldNotifyOfProgress = (progressStepping > 0 && progressStepping < 100);
 
