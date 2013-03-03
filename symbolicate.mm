@@ -194,7 +194,7 @@ process_class:
                             mi->name = [NSString stringWithFormat:@"%c[%@ %@]", methodType, className, methodName];
                             [view setCursor:loc];
                             [view uint32];
-                            mi->impAddr = [view uint32] & ~1;
+                            mi->impAddr = [view uint32];
                             [methods addObject:mi];
                             [mi release];
                         }
