@@ -143,13 +143,10 @@ static CFComparisonResult ReversedCompareMethodInfos(MethodInfo *a, MethodInfo *
 NSArray *methodsForImageWithHeader(VMUMachOHeader *header) {
     NSMutableArray *methods = [NSMutableArray array];
 
-    VMUSegmentLoadCommand *dataSeg = [header segmentNamed:@"__DATA"];
-    long long vmdiff_data = [dataSeg fileoff] - [dataSeg vmaddr];
-
-    VMUSegmentLoadCommand *textSeg = [header segmentNamed:@"__TEXT"];
-    long long vmdiff_text = [textSeg fileoff] - [textSeg vmaddr];
-
+    long long vmdiff_text = 0;
+    long long vmdiff_data = 0;
     id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
+    VMUSegmentLoadCommand *dataSeg = [header segmentNamed:@"__DATA"];
     VMUSection *clsListSect = [dataSeg sectionNamed:@"__objc_classlist"];
     @try {
         [view setCursor:[clsListSect offset]];
@@ -157,6 +154,11 @@ NSArray *methodsForImageWithHeader(VMUMachOHeader *header) {
         for (uint64_t i = 0; i < numClasses; ++i) {
             uint32_t class_t_address = [view uint32];
             uint64_t next_class_t = [view cursor];
+
+            if (i == 0) {
+                VMUSection *sect = [dataSeg sectionNamed:@"__objc_data"];
+                vmdiff_data = ([sect offset] - [sect addr]) + ([sect addr] - class_t_address);
+            }
             [view setCursor:vmdiff_data + class_t_address];
 
 process_class:
@@ -173,7 +175,13 @@ process_class:
                 char methodType = (flags & 1) ? '+' : '-';
 
                 [view advanceCursor:12];
-                [view setCursor:vmdiff_text + [view uint32]];
+                uint64_t class_ro_t_name = [view uint32];
+                if (i == 0) {
+                    VMUSegmentLoadCommand *textSeg = [header segmentNamed:@"__TEXT"];
+                    VMUSection *sect = [textSeg sectionNamed:@"__objc_classname"];
+                    vmdiff_text = ([sect offset] - [sect addr]) + ([sect addr] - class_ro_t_name);
+                }
+                [view setCursor:[header address] + vmdiff_text + class_ro_t_name];
                 NSString *className = [view stringWithEncoding:NSUTF8StringEncoding];
 
                 [view setCursor:vmdiff_data + class_ro_t_address + 20];
@@ -181,16 +189,23 @@ process_class:
                 if (baseMethods != 0) {
                     [view setCursor:vmdiff_data + baseMethods];
                     uint32_t entsize = [view uint32];
-                    if (entsize == 12) {
+                    if (entsize == 12 || entsize == 15) {
                         uint32_t count = [view uint32];
                         for (uint32_t j = 0; j < count; ++j) {
                             MethodInfo *mi = [[MethodInfo alloc] init];
                             uint32_t sel = [view uint32];
-                            uint64_t loc = [view cursor];
-                            [view setCursor:vmdiff_text + sel];
-                            NSString *methodName = [view stringWithEncoding:NSUTF8StringEncoding];
+                            NSString *methodName = nil;
+                            if (entsize == 15) {
+                                // Pre-optimized selector
+                                methodName = [[NSString alloc] initWithCString:(const char *)sel encoding:NSUTF8StringEncoding];
+                            } else {
+                                uint64_t loc = [view cursor];
+                                [view setCursor:[header address] + vmdiff_text + sel];
+                                methodName = [[view stringWithEncoding:NSUTF8StringEncoding] retain];
+                                [view setCursor:loc];
+                            }
                             mi->name = [NSString stringWithFormat:@"%c[%@ %@]", methodType, className, methodName];
-                            [view setCursor:loc];
+                            [methodName release];
                             [view uint32];
                             mi->address = [view uint32];
                             [methods addObject:mi];

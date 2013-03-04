@@ -56,6 +56,7 @@ typedef struct _VMURange {
 - (id)path;
 @end
 @interface VMUSection : NSObject
+- (unsigned long long)addr;
 - (unsigned)offset;
 - (unsigned long long)size;
 @end
