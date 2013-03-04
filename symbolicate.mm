@@ -143,10 +143,15 @@ static CFComparisonResult ReversedCompareMethodInfos(MethodInfo *a, MethodInfo *
 NSArray *methodsForImageWithHeader(VMUMachOHeader *header) {
     NSMutableArray *methods = [NSMutableArray array];
 
-    long long vmdiff_text = 0;
-    long long vmdiff_data = 0;
-    id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
+    BOOL isFromSharedCache = [header respondsToSelector:@selector(isFromSharedCache)] && [header isFromSharedCache];
+
+    VMUSegmentLoadCommand *textSeg = [header segmentNamed:@"__TEXT"];
+    long long vmdiff_text = [textSeg fileoff] - [textSeg vmaddr];
+
     VMUSegmentLoadCommand *dataSeg = [header segmentNamed:@"__DATA"];
+    long long vmdiff_data = [dataSeg fileoff] - [dataSeg vmaddr];
+
+    id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
     VMUSection *clsListSect = [dataSeg sectionNamed:@"__objc_classlist"];
     @try {
         [view setCursor:[clsListSect offset]];
@@ -155,9 +160,10 @@ NSArray *methodsForImageWithHeader(VMUMachOHeader *header) {
             uint32_t class_t_address = [view uint32];
             uint64_t next_class_t = [view cursor];
 
-            if (i == 0) {
+            if (i == 0 && isFromSharedCache) {
+                // FIXME: Determine what this offset is and how to properly obtain it.
                 VMUSection *sect = [dataSeg sectionNamed:@"__objc_data"];
-                vmdiff_data = ([sect offset] - [sect addr]) + ([sect addr] - class_t_address);
+                vmdiff_data -= (class_t_address - [sect addr]) / 0x1000 * 0x1000;
             }
             [view setCursor:vmdiff_data + class_t_address];
 
@@ -176,10 +182,10 @@ process_class:
 
                 [view advanceCursor:12];
                 uint64_t class_ro_t_name = [view uint32];
-                if (i == 0) {
-                    VMUSegmentLoadCommand *textSeg = [header segmentNamed:@"__TEXT"];
+                if (i == 0 && isFromSharedCache && !(flags & RO_META)) {
+                    // FIXME: Determine what this offset is and how to properly obtain it.
                     VMUSection *sect = [textSeg sectionNamed:@"__objc_classname"];
-                    vmdiff_text = ([sect offset] - [sect addr]) + ([sect addr] - class_ro_t_name);
+                    vmdiff_text -= (class_ro_t_name - [sect addr]) / 0x1000 * 0x1000;
                 }
                 [view setCursor:[header address] + vmdiff_text + class_ro_t_name];
                 NSString *className = [view stringWithEncoding:NSUTF8StringEncoding];
