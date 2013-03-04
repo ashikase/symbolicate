@@ -3,7 +3,8 @@ PKG_ID = jp.ashikase.symbolicate
 
 symbolicate_INSTALL_PATH = /usr/bin
 symbolicate_OBJC_FILES = \
-    common.c\
+    common.c \
+    demangle.mm \
     localSymbols.mm \
     main.m \
     RegexKitLite.m \

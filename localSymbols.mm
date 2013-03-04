@@ -1,6 +1,5 @@
 #include "localSymbols.h"
 
-#include <cxxabi.h>
 #include <fcntl.h>
 #include <mach-o/nlist.h>
 #include <sys/mman.h>
@@ -95,23 +94,6 @@ NSString *nameForLocalSymbol(uint32_t dylibOffset, uint32_t symbolAddress) {
     }
 
     return name;
-}
-
-NSString *demangle(NSString *mangled) {
-    NSString *demangled = mangled;
-
-    const char *before = [mangled cStringUsingEncoding:NSASCIIStringEncoding];
-    if (strlen(before) > 0) {
-        // NOTE: When attempting to demangle name, skip initial underscore.
-        int status;
-        char *after = abi::__cxa_demangle(before + 1, NULL, NULL, &status);
-        if (after != NULL) {
-            demangled = [NSString stringWithCString:after encoding:NSASCIIStringEncoding];
-        }
-        free(after);
-    }
-
-    return demangled;
 }
 
 /* vim: set ft=objcpp ff=unix sw=4 ts=4 tw=80 expandtab: */

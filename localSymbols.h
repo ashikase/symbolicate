@@ -6,7 +6,6 @@ extern "C" {
 #endif
 
 NSString *nameForLocalSymbol(uint32_t dylibOffset, uint32_t symbolAddress);
-NSString *demangle(NSString *mangled);
 
 #ifdef __cplusplus
 }

@@ -24,10 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <mach-o/loader.h>
 #include <objc/runtime.h>
 #include <notify.h>
+#include "Headers.h"
 #import "RegexKitLite.h"
 #include "common.h"
-
-#include "Headers.h"
+#include "demangle.h"
 #include "localSymbols.h"
 
 enum SymbolicationMode {
