@@ -80,31 +80,50 @@ int main(int argc, char *argv[]) {
             print_usage();
         } else {
             NSString *filepath = [NSString stringWithUTF8String:inputFile];
-            NSString *content = [NSString stringWithContentsOfFile:filepath encoding:NSUTF8StringEncoding error:NULL];
-            if (content != nil) {
-                // Parse map files
-                NSMutableDictionary *symbolMaps = [NSMutableDictionary dictionary];
-                for (NSString *imagePath in mapFiles) {
-                    NSString *mapFile = [mapFiles objectForKey:imagePath];
-                    NSDictionary *result = parseMapFile(mapFile);
-                    if (result != nil) {
-                        [symbolMaps setObject:result forKey:imagePath];
-                    } else {
-                        fprintf(stderr, "WARNING: Unable to read map file \"%s\".\n", [mapFile UTF8String]);
-                    }
-                }
+            NSData *data = [[NSData alloc] initWithContentsOfFile:filepath];
+            if (data != nil) {
+                NSString *content = nil;
 
-                // Symbolicate input file
-                NSString *result = symbolicate(content, symbolMaps, progressStepping);
-                if (result != nil) {
-                    if (outputFile != NULL) {
-                        NSString *path = [NSString stringWithUTF8String:outputFile];
-                        [result writeToFile:path atomically:NO encoding:NSUTF8StringEncoding error:NULL];
-                        printf("Result written to %s.\n", outputFile);
-                    } else {
-                        printf("%s\n", [result UTF8String]);
+                // Confirm that input file is a crash log.
+                id plist = nil;
+                if (kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_4_0) {
+                    plist = [NSPropertyListSerialization propertyListFromData:data mutabilityOption:0 format:NULL errorDescription:NULL];
+                } else {
+                    plist = [NSPropertyListSerialization propertyListWithData:data options:0 format:NULL error:NULL];
+                }
+                if ([plist isKindOfClass:[NSDictionary class]] && [plist objectForKey:@"SysInfoCrashReporterKey"] != nil) {
+                    content = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+                } else {
+                    fprintf(stderr, "ERROR: Input file is not a valid crash report.\n");
+                }
+                [data release];
+
+                if (content != nil) {
+                    // Parse map files.
+                    NSMutableDictionary *symbolMaps = [NSMutableDictionary dictionary];
+                    for (NSString *imagePath in mapFiles) {
+                        NSString *mapFile = [mapFiles objectForKey:imagePath];
+                        NSDictionary *result = parseMapFile(mapFile);
+                        if (result != nil) {
+                            [symbolMaps setObject:result forKey:imagePath];
+                        } else {
+                            fprintf(stderr, "WARNING: Unable to read map file \"%s\".\n", [mapFile UTF8String]);
+                        }
                     }
-                    ret = 0;
+
+                    // Symbolicate input file.
+                    NSString *result = symbolicate(content, symbolMaps, progressStepping);
+                    if (result != nil) {
+                        if (outputFile != NULL) {
+                            NSString *path = [NSString stringWithUTF8String:outputFile];
+                            [result writeToFile:path atomically:NO encoding:NSUTF8StringEncoding error:NULL];
+                            printf("Result written to %s.\n", outputFile);
+                        } else {
+                            printf("%s\n", [result UTF8String]);
+                        }
+                        ret = 0;
+                    }
+                    [content release];
                 }
             }
         }
