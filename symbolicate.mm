@@ -385,7 +385,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     BOOL hasHeaderFromSharedCacheWithPath = [VMUMemory_File respondsToSelector:@selector(headerFromSharedCacheWithPath:)];
     Class $BinaryInfo = [BinaryInfo class];
     NSUInteger total_lines = [extraInfoArray count];
-    int last_percent = 0;
+    NSUInteger last_percent = 0;
 
     // Prepare array of image start addresses for determining symbols of exception.
     NSArray *imageAddresses = nil;
@@ -395,7 +395,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
 
     for (BacktraceInfo *bti in extraInfoArray) {
          if (shouldNotifyOfProgress) {
-             int this_percent = MIN(100, 200 * i / total_lines);
+             NSUInteger this_percent = MIN((NSUInteger)100, 200 * i / total_lines);
              if (this_percent - last_percent >= progressStepping) {
                  last_percent = this_percent;
                  int token;
@@ -511,7 +511,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             NSNumber *targetAddress = [[NSNumber alloc] initWithUnsignedLongLong:address];
                             CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->symbolAddresses, CFRangeMake(0, count), targetAddress, (CFComparatorFunction)ReversedCompareNSNumber, NULL);
                             [targetAddress release];
-                            if (matchIndex < count) {
+                            if (matchIndex < (CFIndex)count) {
                                 symbolAddress = [[bi->symbolAddresses objectAtIndex:matchIndex] unsignedLongLongValue];
                             }
                         }
@@ -574,7 +574,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                                     CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->methods, CFRangeMake(0, count), targetMethod, (CFComparatorFunction)ReversedCompareMethodInfos, NULL);
                                     [targetMethod release];
 
-                                    if (matchIndex < count) {
+                                    if (matchIndex < (CFIndex)count) {
                                         method = [bi->methods objectAtIndex:matchIndex];
                                     }
                                 }
