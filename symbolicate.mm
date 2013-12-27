@@ -362,7 +362,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
             }
 
             case SM_BinaryImageMode: {
-                NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +](.+?) arm\\w*  (?:&lt;[0-9a-f]{32}&gt; )?(.+)$"];
+                NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +]?(.+?) arm\\w*  (?:&lt;[0-9a-f]{32}&gt; )?(.+)$"];
                 if ([array count] == 4) {
                     NSString *match = [array objectAtIndex:1];
                     unsigned long long address = unsignedLongLongFromHexString([match UTF8String], [match length]);
