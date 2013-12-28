@@ -64,25 +64,39 @@ NSString *nameForLocalSymbol(uint64_t dylibOffset, uint64_t symbolAddress) {
     // NOTE: Local symbol offset/size fields did not exist in earlier firmware.
     // TODO: At what point were they introduced?
     if (header->mappingOffset < sizeof(_dyld_cache_header)) return nil;
-    uint64_t localSymbolsOffset = header->localSymbolsOffset;
-    uint64_t localSymbolsSize = header->localSymbolsSize;
+    const BOOL is64Bit = (strstr(header->magic, "arm64") != NULL);
+    const uint64_t localSymbolsOffset = header->localSymbolsOffset;
+    const uint64_t localSymbolsSize = header->localSymbolsSize;
     free(header);
 
     void *data = mmap(NULL, localSymbolsSize, PROT_READ, MAP_PRIVATE, fd, localSymbolsOffset);
     dyld_cache_local_symbols_info *localSymbols = reinterpret_cast<dyld_cache_local_symbols_info *>(data);
     close(fd);
     if (localSymbols != MAP_FAILED) {
-        const struct nlist *nlists = reinterpret_cast<const struct nlist *>((uint32_t)localSymbols + localSymbols->nlistOffset);
         dyld_cache_local_symbols_entry *entries = reinterpret_cast<dyld_cache_local_symbols_entry *>(reinterpret_cast<uint8_t *>(localSymbols) + localSymbols->entriesOffset);
         for (uint32_t i = 0; i < localSymbols->entriesCount; ++i) {
             dyld_cache_local_symbols_entry *entry = &entries[i];
             if (entry->dylibOffset == dylibOffset) {
                 for (uint32_t j = 0; j < entry->nlistCount; ++j) {
-                    const struct nlist *n = &nlists[entry->nlistStartIndex + j];
-                    if (n->n_value == symbolAddress) {
-                        if (n->n_un.n_strx != 0 && (n->n_type & N_STAB) == 0) {
-                            const char *strings = reinterpret_cast<const char *>((uint32_t)localSymbols + localSymbols->stringsOffset);
-                            name = [NSString stringWithCString:(strings + n->n_un.n_strx) encoding:NSASCIIStringEncoding];
+                    if (is64Bit) {
+                        const struct nlist_64 *nlists = reinterpret_cast<const struct nlist_64 *>((uint32_t)localSymbols + localSymbols->nlistOffset);
+                        const struct nlist_64 *n = &nlists[entry->nlistStartIndex + j];
+                        if (n->n_value == symbolAddress) {
+                            if (n->n_un.n_strx != 0 && (n->n_type & N_STAB) == 0) {
+                                const char *strings = reinterpret_cast<const char *>((uint32_t)localSymbols + localSymbols->stringsOffset);
+                                name = [NSString stringWithCString:(strings + n->n_un.n_strx) encoding:NSASCIIStringEncoding];
+                            }
+                            break;
+                        }
+                    } else {
+                        const struct nlist *nlists = reinterpret_cast<const struct nlist *>((uint32_t)localSymbols + localSymbols->nlistOffset);
+                        const struct nlist *n = &nlists[entry->nlistStartIndex + j];
+                        if (n->n_value == symbolAddress) {
+                            if (n->n_un.n_strx != 0 && (n->n_type & N_STAB) == 0) {
+                                const char *strings = reinterpret_cast<const char *>((uint32_t)localSymbols + localSymbols->stringsOffset);
+                                name = [NSString stringWithCString:(strings + n->n_un.n_strx) encoding:NSASCIIStringEncoding];
+                            }
+                            break;
                         }
                     }
                 }
