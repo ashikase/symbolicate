@@ -20,6 +20,7 @@ typedef struct _dyld_cache_header {
     uint64_t slideInfoSize;
     uint64_t localSymbolsOffset;
     uint64_t localSymbolsSize;
+    uint8_t  uuid[16];
 } dyld_cache_header;
 
 typedef struct _dyld_cache_local_symbols_info {
