@@ -14,12 +14,9 @@ symbolicate_LDFLAGS = -lbz2 -licucore
 symbolicate_PRIVATE_FRAMEWORKS = Symbolication
 ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\"
 
-TARGET = iphone:3.0
-#ARCHS =
-#SDKTARGET = arm-apple-darwin11
-#TARGET_CXX = clang -ccc-host-triple $(SDKTARGET)
-#TARGET_LD = $(SDKTARGET)-g++
-#TARGET_CODESIGN_ALLOCATE=$(CODESIGN_ALLOCATE)
+ARCHS = armv6
+TARGET = iphone
+TARGET_IPHONEOS_DEPLOYMENT_VERSION = 3.0
 
 include theos/makefiles/common.mk
 include $(THEOS)/makefiles/tool.mk
