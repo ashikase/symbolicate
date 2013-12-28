@@ -2,8 +2,8 @@
 #define SYMBOLICATE_HEADERS_H_
 
 typedef struct _VMURange {
-    unsigned long long location;
-    unsigned long long length;
+    uint64_t location;
+    uint64_t length;
 } VMURange;
 
 @interface VMUSymbolicator : NSObject @end
@@ -20,11 +20,11 @@ typedef struct _VMURange {
 + (id)extractMachOHeadersFromHeader:(id)header matchingArchitecture:(id)architecture considerArchives:(BOOL)archives;
 @end
 @interface VMULoadCommand : NSObject
-- (unsigned long long)cmdSize;
+- (uint64_t)cmdSize;
 @end
 @interface VMUMachOHeader : VMUHeader
-- (unsigned long long)address;
-- (unsigned)fileType;
+- (uint64_t)address;
+- (uint32_t)fileType;
 - (BOOL)isFromSharedCache;
 - (id)loadCommands;
 - (id)memory;
@@ -36,19 +36,19 @@ typedef struct _VMURange {
 - (id)view;
 @end
 @protocol VMUMemoryView <NSObject>
-- (void)advanceCursor:(unsigned long long)cursor;
-- (unsigned long long)cursor;
-- (void)setCursor:(unsigned long long)cursor;
+- (void)advanceCursor:(uint64_t)cursor;
+- (uint64_t)cursor;
+- (void)setCursor:(uint64_t)cursor;
 - (id)stringWithEncoding:(unsigned)encoding;
-- (unsigned)uint32;
-- (unsigned long long)ULEB128;
+- (uint32_t)uint32;
+- (uint64_t)ULEB128;
 @end
 @interface VMUMemory_Base : NSObject @end
 @interface VMUMemory_File : VMUMemory_Base <VMUMemory>
 + (id)headerFromSharedCacheWithPath:(id)path;
 + (id)headerWithPath:(id)path;
 - (void)buildSharedCacheMap;
-- (id)initWithPath:(id)path fileRange:(VMURange)range mapToAddress:(unsigned long long)address architecture:(id)architecture;
+- (id)initWithPath:(id)path fileRange:(VMURange)range mapToAddress:(uint64_t)address architecture:(id)architecture;
 @end
 @interface VMUMemory_Handle : VMUMemory_Base <VMUMemory> @end
 @interface VMUSourceInfo : VMUAddressRange <NSCopying>
@@ -56,14 +56,14 @@ typedef struct _VMURange {
 - (id)path;
 @end
 @interface VMUSection : NSObject
-- (unsigned long long)addr;
-- (unsigned)offset;
-- (unsigned long long)size;
+- (uint64_t)addr;
+- (uint32_t)offset;
+- (uint64_t)size;
 @end
 @interface VMUSegmentLoadCommand : VMULoadCommand
-- (unsigned long long)fileoff;
+- (uint64_t)fileoff;
 - (id)sectionNamed:(id)named;
-- (unsigned long long)vmaddr;
+- (uint64_t)vmaddr;
 @end
 @interface VMUSymbol : VMUAddressRange <NSCopying>
 - (VMURange)addressRange;
@@ -73,8 +73,8 @@ typedef struct _VMURange {
 + (id)extractSymbolOwnerFromHeader:(id)header;
 @end
 @interface VMUSymbolOwner : NSObject <NSCopying>
-- (id)sourceInfoForAddress:(unsigned long long)address;
-- (id)symbolForAddress:(unsigned long long)address;
+- (id)sourceInfoForAddress:(uint64_t)address;
+- (id)symbolForAddress:(uint64_t)address;
 @end
 
 #endif // SYMBOLICATE_HEADERS_H_

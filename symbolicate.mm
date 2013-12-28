@@ -40,8 +40,8 @@ enum SymbolicationMode {
 @interface BacktraceInfo : NSObject {
     @package
         NSUInteger depth;
-        unsigned long long imageAddress;
-        unsigned long long address;
+        uint64_t imageAddress;
+        uint64_t address;
 }
 @end
 @implementation BacktraceInfo @end
@@ -49,8 +49,8 @@ enum SymbolicationMode {
 @interface BinaryInfo : NSObject {
     @package
         // slide = text address - actual address
-        unsigned long long address;
-        long long slide;
+        uint64_t address;
+        int64_t slide;
         VMUSymbolOwner *owner;
         VMUMachOHeader *header;
         NSArray *symbolAddresses;
@@ -66,7 +66,7 @@ enum SymbolicationMode {
 
 @interface MethodInfo : NSObject {
     @package
-        unsigned long long address;
+        uint64_t address;
         NSString *name;
 }
 @end
@@ -146,10 +146,10 @@ NSArray *methodsForImageWithHeader(VMUMachOHeader *header) {
     BOOL isFromSharedCache = [header respondsToSelector:@selector(isFromSharedCache)] && [header isFromSharedCache];
 
     VMUSegmentLoadCommand *textSeg = [header segmentNamed:@"__TEXT"];
-    long long vmdiff_text = [textSeg fileoff] - [textSeg vmaddr];
+    int64_t vmdiff_text = [textSeg fileoff] - [textSeg vmaddr];
 
     VMUSegmentLoadCommand *dataSeg = [header segmentNamed:@"__DATA"];
-    long long vmdiff_data = [dataSeg fileoff] - [dataSeg vmaddr];
+    int64_t vmdiff_data = [dataSeg fileoff] - [dataSeg vmaddr];
 
     id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
     VMUSection *clsListSect = [dataSeg sectionNamed:@"__objc_classlist"];
@@ -365,7 +365,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                 NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +]?(.+?) arm\\w*  (?:&lt;[0-9a-f]{32}&gt; )?(.+)$"];
                 if ([array count] == 4) {
                     NSString *match = [array objectAtIndex:1];
-                    unsigned long long address = unsignedLongLongFromHexString([match UTF8String], [match length]);
+                    uint64_t address = unsignedLongLongFromHexString([match UTF8String], [match length]);
                     [binaryImages setObject:array forKey:[NSNumber numberWithUnsignedLongLong:address]];
                 } else {
                     mode = SM_CheckingMode;
@@ -413,7 +413,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
             // Determine start address for this backtrace line.
             if (bti->imageAddress == 0) {
                 for (NSNumber *number in [imageAddresses reverseObjectEnumerator]) {
-                    unsigned long long imageAddress = [number unsignedLongLongValue];
+                    uint64_t imageAddress = [number unsignedLongLongValue];
                     if (bti->address > imageAddress) {
                         bti->imageAddress = imageAddress;
                         break;
@@ -452,7 +452,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         header = [[VMUHeader extractMachOHeadersFromHeader:header matchingArchitecture:[VMUArchitecture currentArchitecture] considerArchives:NO] lastObject];
                     }
                     if (header != nil) {
-                        unsigned long long textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
+                        uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
                         bi->slide = textStart - bi->address;
                         bi->owner = [VMUSymbolExtractor extractSymbolOwnerFromHeader:header];
                         bi->header = header;
@@ -497,7 +497,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                 // Add source/symbol information to the end of the output line.
                 NSString *lineComment = nil;
                 if (bi->header != nil) {
-                    unsigned long long address = bti->address + bi->slide;
+                    uint64_t address = bti->address + bi->slide;
                     VMUSourceInfo *srcInfo = [bi->owner sourceInfoForAddress:address];
                     if (srcInfo != nil) {
                         // Add source file name and line number.
@@ -505,7 +505,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                     } else {
                         // Determine symbol address.
                         // NOTE: Only possible if LC_FUNCTION_STARTS exists in the binary.
-                        unsigned long long symbolAddress = 0;
+                        uint64_t symbolAddress = 0;
                         NSUInteger count = [bi->symbolAddresses count];
                         if (count != 0) {
                             NSNumber *targetAddress = [[NSNumber alloc] initWithUnsignedLongLong:address];
@@ -518,7 +518,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
 
                         // Attempt to add symbol name and hex offset.
                         NSString *name = nil;
-                        unsigned long long offset = 0;
+                        uint64_t offset = 0;
                         VMUSymbol *symbol = [bi->owner symbolForAddress:address];
                         if (symbol != nil && ([symbol addressRange].location == (symbolAddress & ~1) || symbolAddress == 0)) {
                             if (alreadySymbolicated) {
@@ -553,7 +553,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             offset = address - [symbol addressRange].location;
                         } else if (NSDictionary *map = [symbolMaps objectForKey:bi->path]) {
                             for (NSNumber *number in [[[map allKeys] sortedArrayUsingSelector:@selector(compare:)] reverseObjectEnumerator]) {
-                                unsigned long long mapSymbolAddress = [number unsignedLongLongValue];
+                                uint64_t mapSymbolAddress = [number unsignedLongLongValue];
                                 if (address > mapSymbolAddress) {
                                     name = demangle([map objectForKey:number]);
                                     offset = address - mapSymbolAddress;
@@ -583,7 +583,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                                     name = method->name;
                                     offset = address - method->address;
                                 } else {
-                                    unsigned long long textStart = [[bi->header segmentNamed:@"__TEXT"] vmaddr];
+                                    uint64_t textStart = [[bi->header segmentNamed:@"__TEXT"] vmaddr];
                                     name = [NSString stringWithFormat:@"0x%08llx", (symbolAddress - textStart)];
                                     offset = address - symbolAddress;
                                 }
