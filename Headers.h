@@ -18,6 +18,7 @@ typedef struct _VMURange {
 @end
 @interface VMUHeader : NSObject
 + (id)extractMachOHeadersFromHeader:(id)header matchingArchitecture:(id)architecture considerArchives:(BOOL)archives;
+- (BOOL)isMachO64;
 @end
 @interface VMULoadCommand : NSObject
 - (uint64_t)cmdSize;
