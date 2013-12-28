@@ -37,7 +37,7 @@ typedef struct _dyld_cache_local_symbols_entry {
     uint32_t nlistCount;
 } dyld_cache_local_symbols_entry;
 
-NSString *nameForLocalSymbol(uint32_t dylibOffset, uint32_t symbolAddress) {
+NSString *nameForLocalSymbol(uint64_t dylibOffset, uint64_t symbolAddress) {
     NSString *name = nil;
 
     NSString *cachePath = [VMUDyld nativeSharedCachePath];
