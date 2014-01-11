@@ -42,6 +42,7 @@ typedef struct _VMURange {
 - (void)setCursor:(uint64_t)cursor;
 - (id)stringWithEncoding:(unsigned)encoding;
 - (uint32_t)uint32;
+- (uint64_t)uint64;
 - (uint64_t)ULEB128;
 @end
 @interface VMUMemory_Base : NSObject @end
