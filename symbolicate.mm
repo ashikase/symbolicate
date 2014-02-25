@@ -462,10 +462,10 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                     // NOTE: Binary images are only processed as needed. Most
                     //       likely only a small number of images were being
                     //       called into at the time of the crash.
-                    NSString *matches[3];
-                    [(NSArray *)bi getObjects:matches range:NSMakeRange(1, 3)];
 
                     // Create a BinaryInfo object for the image
+                    NSArray *array = (NSArray *)bi;
+                    NSString *matches[] = {[array objectAtIndex:1], [array objectAtIndex:2], [array objectAtIndex:3]};
                     bi = [[BinaryInfo alloc] init];
                     bi->address = unsignedLongLongFromHexString([matches[0] UTF8String], [matches[0] length]);
                     bi->path = matches[2];
