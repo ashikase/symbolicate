@@ -275,6 +275,21 @@ static NSString *escapeHTML(NSString *x, NSCharacterSet *escSet) {
     }
 }
 
+static BacktraceInfo *extractBacktraceInfo(NSString *line) {
+    BacktraceInfo *bti = nil;
+
+    NSArray *array = [line captureComponentsMatchedByRegex:@"^(\\d+)\\s+.*\\S\\s+0x([0-9a-f]+) 0x([0-9a-f]+) \\+ (?:0x)?\\d+"];
+    if ([array count] == 4) {
+        NSString *matches[] = {[array objectAtIndex:1], [array objectAtIndex:2], [array objectAtIndex:3]};
+        bti = [[BacktraceInfo alloc] init];
+        bti->depth = [matches[0] intValue];
+        bti->address = unsignedLongLongFromHexString([matches[1] UTF8String], [matches[1] length]);
+        bti->imageAddress = unsignedLongLongFromHexString([matches[2] UTF8String], [matches[2] length]);
+    }
+
+    return [bti autorelease];
+}
+
 NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned progressStepping) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
@@ -301,7 +316,6 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     NSMutableDictionary *binaryImages = [[NSMutableDictionary alloc] init];
     BOOL hasLastExceptionBacktrace = NO;
     BOOL isFilteredSignal = YES;
-    NSUInteger depth = 0;
 
     for (NSString *line in inputLines) {
         // extraInfo:
@@ -342,19 +356,10 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                 } else if ([line length] > 0) {
                     if ([line hasSuffix:@":"]) {
                         extraInfo = ([line rangeOfString:@"Crashed"].location != NSNotFound) ? (id)kCFBooleanTrue : (id)kCFBooleanFalse;
-                        depth = 0;
                     } else {
-                        NSArray *array = [line captureComponentsMatchedByRegex:@"^\\d+\\s+.*\\S\\s+0x([0-9a-f]+) 0x([0-9a-f]+) \\+ (?:0x)?\\d+"];
-                        if ([array count] == 3) {
-                            NSString *matches[2];
-                            [array getObjects:matches range:NSMakeRange(1, 2)];
-
-                            BacktraceInfo *bti = [[[BacktraceInfo alloc] init] autorelease];
-                            bti->depth = depth;
-                            bti->imageAddress = unsignedLongLongFromHexString([matches[1] UTF8String], [matches[1] length]);
-                            bti->address = unsignedLongLongFromHexString([matches[0] UTF8String], [matches[0] length]);
+                        BacktraceInfo *bti = extractBacktraceInfo(line);
+                        if (bti != nil) {
                             extraInfo = bti;
-                            ++depth;
                         }
                     }
                 }
@@ -368,13 +373,14 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                     NSRange range = NSMakeRange(0, lastCloseParenthesis);
                     NSUInteger firstOpenParenthesis = [line rangeOfString:@"(" options:0 range:range].location;
                     if (firstOpenParenthesis < lastCloseParenthesis) {
+                        NSUInteger depth = 0;
                         range = NSMakeRange(firstOpenParenthesis + 1, lastCloseParenthesis - firstOpenParenthesis - 1);
                         NSArray *array = [[line substringWithRange:range] componentsSeparatedByString:@" "];
                         for (NSString *address in array) {
                             BacktraceInfo *bti = [[BacktraceInfo alloc] init];
                             bti->depth = depth;
-                            bti->imageAddress = 0;
                             bti->address = unsignedLongLongFromHexString([address UTF8String], [address length]);
+                            bti->imageAddress = 0;
                             [extraInfoArray addObject:bti];
                             [bti release];
                             ++depth;
