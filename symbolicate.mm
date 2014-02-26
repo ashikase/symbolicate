@@ -569,19 +569,6 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             // NOTE: It seems that Apple's demangler fails for some
                             //       names, so we attempt to do it ourselves.
                             name = demangle(name);
-
-                            // FIXME: Where does this actually belong?
-                            if (isCrashing) {
-                                // Check if this function should never cause crash (only hang).
-                                if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [functionFilters containsObject:name]) {
-                                    isCrashing = NO;
-                                }
-                            } else if (!isCrashing) {
-                                // Check if this function is actually causing crash.
-                                if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"] && [reverseFilters containsObject:name]) {
-                                    isCrashing = YES;
-                                }
-                            }
                             offset = address - [symbol addressRange].location;
                         } else if (NSDictionary *map = [symbolMaps objectForKey:bi->path]) {
                             for (NSNumber *number in [[[map allKeys] sortedArrayUsingSelector:@selector(compare:)] reverseObjectEnumerator]) {
@@ -624,6 +611,21 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
 
                         if (name != nil) {
                             lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", escapeHTML(name, escSet), offset];
+
+                            // Check symbol name against blame filters.
+                            if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"]) {
+                                if (isCrashing) {
+                                    // Check if this function should never cause crash (only hang).
+                                    if ([functionFilters containsObject:name]) {
+                                        isCrashing = NO;
+                                    }
+                                } else {
+                                    // Check if this function is actually causing crash.
+                                    if ([reverseFilters containsObject:name]) {
+                                        isCrashing = YES;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
