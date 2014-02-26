@@ -473,7 +473,6 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                     bi = [[BinaryInfo alloc] init];
                     bi->address = uint64FromHexString(matches[0]);
                     bi->path = matches[2];
-                    bi->line = 0;
                     bi->blamable = YES;
 
                     // Get Mach-O header for the image
