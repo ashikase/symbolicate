@@ -72,6 +72,10 @@ enum SymbolicationMode {
 @end
 @implementation MethodInfo @end
 
+static uint64_t uint64FromHexString(NSString *string) {
+    return (uint64_t)unsignedLongLongFromHexString([string UTF8String], [string length]);
+}
+
 static uint64_t linkCommandOffsetForHeader(VMUMachOHeader *header, uint64_t linkCommand) {
     uint64_t cmdsize = 0;
     Ivar ivar = class_getInstanceVariable([VMULoadCommand class], "_command");
@@ -283,8 +287,8 @@ static BacktraceInfo *extractBacktraceInfo(NSString *line) {
         NSString *matches[] = {[array objectAtIndex:1], [array objectAtIndex:2], [array objectAtIndex:3]};
         bti = [[BacktraceInfo alloc] init];
         bti->depth = [matches[0] intValue];
-        bti->address = unsignedLongLongFromHexString([matches[1] UTF8String], [matches[1] length]);
-        bti->imageAddress = unsignedLongLongFromHexString([matches[2] UTF8String], [matches[2] length]);
+        bti->address = uint64FromHexString(matches[1]);
+        bti->imageAddress = uint64FromHexString(matches[2]);
     }
 
     return [bti autorelease];
@@ -379,7 +383,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         for (NSString *address in array) {
                             BacktraceInfo *bti = [[BacktraceInfo alloc] init];
                             bti->depth = depth;
-                            bti->address = unsignedLongLongFromHexString([address UTF8String], [address length]);
+                            bti->address = uint64FromHexString(address);
                             bti->imageAddress = 0;
                             [extraInfoArray addObject:bti];
                             [bti release];
@@ -397,7 +401,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                 NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +]?(.+?) arm\\w*  (?:&lt;[0-9a-f]{32}&gt; )?(.+)$"];
                 if ([array count] == 4) {
                     NSString *match = [array objectAtIndex:1];
-                    uint64_t address = unsignedLongLongFromHexString([match UTF8String], [match length]);
+                    uint64_t address = uint64FromHexString(match);
                     [binaryImages setObject:array forKey:[NSNumber numberWithUnsignedLongLong:address]];
                 } else {
                     mode = SM_CheckingMode;
@@ -467,7 +471,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                     NSArray *array = (NSArray *)bi;
                     NSString *matches[] = {[array objectAtIndex:1], [array objectAtIndex:2], [array objectAtIndex:3]};
                     bi = [[BinaryInfo alloc] init];
-                    bi->address = unsignedLongLongFromHexString([matches[0] UTF8String], [matches[0] length]);
+                    bi->address = uint64FromHexString(matches[0]);
                     bi->path = matches[2];
                     bi->line = 0;
                     bi->blamable = YES;
