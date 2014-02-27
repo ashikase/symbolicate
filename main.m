@@ -80,7 +80,8 @@ int main(int argc, char *argv[]) {
             print_usage();
         } else {
             NSString *filepath = [NSString stringWithUTF8String:inputFile];
-            NSData *data = [[NSData alloc] initWithContentsOfFile:filepath];
+            NSError *error = nil;
+            NSData *data = [[NSData alloc] initWithContentsOfFile:filepath options:0 error:&error];
             if (data != nil) {
                 NSString *content = nil;
 
@@ -125,6 +126,8 @@ int main(int argc, char *argv[]) {
                     }
                     [content release];
                 }
+            } else {
+                fprintf(stderr, "ERROR: Unable to load data from specified file: \"%s\".\n", [[error localizedDescription] UTF8String]);
             }
         }
     }
