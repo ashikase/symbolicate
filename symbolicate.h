@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 extern "C" {
 #endif
 
-NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned progressStepping);
+NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned progressStepping, NSArray **blame);
 
 #ifdef __cplusplus
 }

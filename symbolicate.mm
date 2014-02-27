@@ -266,19 +266,6 @@ process_class:
     return methods;
 }
 
-static NSString *escapeHTML(NSString *x, NSCharacterSet *escSet) {
-    // Do not copy unless we're sure the string contains the characters we want to escape.
-    if ([x rangeOfCharacterFromSet:escSet].location != NSNotFound) {
-        NSMutableString *rx = [NSMutableString stringWithString:x];
-        [rx replaceOccurrencesOfString:@"&" withString:@"&amp;" options:0 range:NSMakeRange(0, [rx length])];
-        [rx replaceOccurrencesOfString:@"<" withString:@"&lt;" options:0 range:NSMakeRange(0, [rx length])];
-        [rx replaceOccurrencesOfString:@">" withString:@"&gt;" options:0 range:NSMakeRange(0, [rx length])];
-        return rx;
-    } else {
-        return x;
-    }
-}
-
 static BacktraceInfo *extractBacktraceInfo(NSString *line) {
     BacktraceInfo *bti = nil;
 
@@ -294,14 +281,14 @@ static BacktraceInfo *extractBacktraceInfo(NSString *line) {
     return [bti autorelease];
 }
 
-NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned progressStepping) {
+NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned progressStepping, NSArray **blame) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
-    BOOL alreadySymbolicated = [content isMatchedByRegex:@"<key>symbolicated</key>[\\n\\s]+<true\\s*/>"];
-    if (alreadySymbolicated && [symbolMaps count] == 0) {
-        fprintf(stderr, "WARNING: File has already been symbolicated, and no symbol maps were provided for reprocessing.\n");
-        return nil;
-    }
+    //BOOL alreadySymbolicated = [content isMatchedByRegex:@"<key>symbolicated</key>[\\n\\s]+<true\\s*/>"];
+    //if (alreadySymbolicated && [symbolMaps count] == 0) {
+    //    fprintf(stderr, "WARNING: File has already been symbolicated, and no symbol maps were provided for reprocessing.\n");
+    //    return nil;
+    //}
 
     NSArray *inputLines = [[content stringByReplacingOccurrencesOfString:@"\r" withString:@""] componentsSeparatedByString:@"\n"];
     NSMutableArray *outputLines = [[NSMutableArray alloc] init];
@@ -345,7 +332,8 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                     break;
                 } else if ([line hasPrefix:@"Last Exception Backtrace:"]) {
                     hasLastExceptionBacktrace = YES;
-                    mode = alreadySymbolicated ? SM_BacktraceMode : SM_ExceptionMode;
+                    //mode = alreadySymbolicated ? SM_BacktraceMode : SM_ExceptionMode;
+                    mode = SM_ExceptionMode;
                     break;
                 } else if (![line hasPrefix:@"Thread 0"]) {
                     break;
@@ -398,7 +386,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
             }
 
             case SM_BinaryImageMode: {
-                NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +]?(.+?) arm\\w*  (?:&lt;[0-9a-f]{32}&gt; )?(.+)$"];
+                NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +]?(.+?) arm\\w*  (?:<[0-9a-f]{32}> )?(.+)$"];
                 if ([array count] == 4) {
                     NSString *match = [array objectAtIndex:1];
                     uint64_t address = uint64FromHexString(match);
@@ -413,8 +401,6 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
         [outputLines addObject:line];
         [extraInfoArray addObject:extraInfo];
     }
-
-    NSCharacterSet *escSet = [NSCharacterSet characterSetWithCharactersInString:@"<>&"];
 
     NSUInteger i = 0;
     BOOL isCrashing = NO;
@@ -536,7 +522,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                     VMUSourceInfo *srcInfo = [bi->owner sourceInfoForAddress:address];
                     if (srcInfo != nil) {
                         // Add source file name and line number.
-                        lineComment = [NSString stringWithFormat:@"\t// %@:%u", escapeHTML([srcInfo path], escSet), [srcInfo lineNumber]];
+                        lineComment = [NSString stringWithFormat:@"\t// %@:%u", [srcInfo path], [srcInfo lineNumber]];
                     } else {
                         // Determine symbol address.
                         // NOTE: Only possible if LC_FUNCTION_STARTS exists in the binary.
@@ -556,9 +542,9 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         uint64_t offset = 0;
                         VMUSymbol *symbol = [bi->owner symbolForAddress:address];
                         if (symbol != nil && ([symbol addressRange].location == (symbolAddress & ~1) || symbolAddress == 0)) {
-                            if (alreadySymbolicated) {
-                                goto skip_this_line;
-                            }
+                            //if (alreadySymbolicated) {
+                            //    goto skip_this_line;
+                            //}
                             name = [symbol name];
                             if ([name isEqualToString:@"<redacted>"] && hasHeaderFromSharedCacheWithPath) {
                                 NSString *localName = nameForLocalSymbol([bi->header address], [symbol addressRange].location);
@@ -613,7 +599,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         }
 
                         if (name != nil) {
-                            lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", escapeHTML(name, escSet), offset];
+                            lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", name, offset];
 
                             // Check symbol name against blame filters.
                             if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"]) {
@@ -669,26 +655,28 @@ skip_this_line:
     }
     */
 
-    if (!alreadySymbolicated) {
-        // Write down blame info.
-        NSMutableString *blameInfo = [NSMutableString stringWithString:@"\t<key>blame</key>\n\t<array>\n"];
+    if (blame != NULL) {
+        // Copy down blame info.
         if (isFilteredSignal) {
+            NSMutableArray *blameArray = [NSMutableArray new];
             for (NSNumber *key in binaryImages) {
                 BinaryInfo *bi = [binaryImages objectForKey:key];
                 if ([bi isKindOfClass:$BinaryInfo] && bi->blamable) {
-                    [blameInfo appendFormat:@"\t\t<array><string>%@</string><integer>%d</integer></array>\n", escapeHTML(bi->path, escSet), bi->line];
+                    NSArray *array = [[NSArray alloc] initWithObjects:bi->path, [NSNumber numberWithUnsignedInteger:bi->line], nil];
+                    [blameArray addObject:array];
+                    [array release];
                 }
             }
+            *blame = blameArray;
         }
-        [blameInfo appendString:@"\t</array>"];
-        [outputLines insertObject:blameInfo atIndex:[outputLines count] - 3];
-        [binaryImages release];
-
-        // Mark that this file has been symbolicated.
-        [outputLines insertObject:@"\t<key>symbolicated</key>\n\t<true />" atIndex:[outputLines count] - 3];
     }
+    [binaryImages release];
 
     [pool drain];
+
+    if (blame != NULL) {
+        [*blame autorelease];
+    }
 
     [outputLines autorelease];
     return [outputLines componentsJoinedByString:@"\n"];

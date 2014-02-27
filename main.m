@@ -85,19 +85,21 @@ int main(int argc, char *argv[]) {
             if (data != nil) {
                 NSString *content = nil;
 
-                // Confirm that input file is a crash log.
+                // Attempt to load data as a property list.
                 id plist = nil;
                 if (kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_4_0) {
                     plist = [NSPropertyListSerialization propertyListFromData:data mutabilityOption:0 format:NULL errorDescription:NULL];
                 } else {
                     plist = [NSPropertyListSerialization propertyListWithData:data options:0 format:NULL error:NULL];
                 }
+                [data release];
+
+                // Confirm that input file is a crash log.
                 if ([plist isKindOfClass:[NSDictionary class]] && [plist objectForKey:@"SysInfoCrashReporterKey"] != nil) {
-                    content = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+                    content = [plist objectForKey:@"description"];
                 } else {
                     fprintf(stderr, "ERROR: Input file is not a valid crash report.\n");
                 }
-                [data release];
 
                 if (content != nil) {
                     // Parse map files.
@@ -113,18 +115,40 @@ int main(int argc, char *argv[]) {
                     }
 
                     // Symbolicate input file.
-                    NSString *result = symbolicate(content, symbolMaps, progressStepping);
+                    NSArray *blame = nil;
+                    NSString *result = symbolicate(content, symbolMaps, progressStepping, &blame);
                     if (result != nil) {
-                        if (outputFile != NULL) {
-                            NSString *path = [NSString stringWithUTF8String:outputFile];
-                            [result writeToFile:path atomically:NO encoding:NSUTF8StringEncoding error:NULL];
-                            printf("Result written to %s.\n", outputFile);
+                        // Update the property list.
+                        NSMutableDictionary *newPlist = [plist mutableCopy];
+                        [newPlist setObject:result forKey:@"description"];
+
+                        // Update blame info.
+                        [newPlist setObject:blame forKey:@"blame"];
+
+                        // Mark that this file has been symbolicated.
+                        [newPlist setObject:[NSNumber numberWithBool:YES] forKey:@"symbolicated"];
+
+                        // Convert back to a data object.
+                        NSError *error = nil;
+                        NSData *data = [NSPropertyListSerialization dataWithPropertyList:newPlist format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
+                        [newPlist release];
+                        if (data != nil) {
+                            if (outputFile != NULL) {
+                                // Write to file.
+                                NSString *path = [NSString stringWithUTF8String:outputFile];
+                                [data writeToFile:path atomically:YES];
+                                printf("Result written to %s.\n", outputFile);
+                            } else {
+                                // Print to screen.
+                                NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+                                printf("%s\n", [string UTF8String]);
+                                [string release];
+                            }
+                            ret = 0;
                         } else {
-                            printf("%s\n", [result UTF8String]);
+                            fprintf(stderr, "ERROR: Unable to convert new plist to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
                         }
-                        ret = 0;
                     }
-                    [content release];
                 }
             } else {
                 fprintf(stderr, "ERROR: Unable to load data from specified file: \"%s\".\n", [[error localizedDescription] UTF8String]);
