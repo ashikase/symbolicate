@@ -37,14 +37,34 @@ enum SymbolicationMode {
     SM_BinaryImageMode,
 };
 
+@interface SymbolInfo : NSObject
+@property(nonatomic, copy) NSString *name;
+@property(nonatomic) uint64_t offset;
+@property(nonatomic, copy) NSString *sourcePath;
+@property(nonatomic) NSUInteger sourceLineNumber;
+@end
+@implementation SymbolInfo
+- (void)dealloc {
+    [_name release];
+    [_sourcePath release];
+    [super dealloc];
+}
+@end
+
 @interface BacktraceInfo : NSObject {
     @package
         NSUInteger depth;
         uint64_t imageAddress;
         uint64_t address;
 }
+@property(nonatomic, retain) SymbolInfo *symbolInfo;
 @end
-@implementation BacktraceInfo @end
+@implementation BacktraceInfo
+- (void)dealloc {
+    [_symbolInfo release];
+    [super dealloc];
+}
+@end
 
 @interface BinaryInfo : NSObject {
     @package
@@ -281,7 +301,7 @@ static BacktraceInfo *extractBacktraceInfo(NSString *line) {
     return [bti autorelease];
 }
 
-NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned progressStepping, NSArray **blame) {
+NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned progressStepping, NSArray **blameInfo) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
     //BOOL alreadySymbolicated = [content isMatchedByRegex:@"<key>symbolicated</key>[\\n\\s]+<true\\s*/>"];
@@ -294,19 +314,11 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
     NSMutableArray *outputLines = [[NSMutableArray alloc] init];
     BOOL shouldNotifyOfProgress = (progressStepping > 0 && progressStepping < 100);
 
-    NSDictionary *whiteListFile = [[NSDictionary alloc] initWithContentsOfFile:@"/etc/symbolicate/whitelist.plist"];
-    NSSet *filters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"Filters"]];
-    NSSet *functionFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"FunctionFilters"]];
-    NSArray *prefixFilters = [[whiteListFile objectForKey:@"PrefixFilters"] retain];
-    NSSet *reverseFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"ReverseFunctionFilters"]];
-    NSArray *signalFilters = [[whiteListFile objectForKey:@"SignalFilters"] retain];
-    [whiteListFile release];
-
     enum SymbolicationMode mode = SM_CheckingMode;
     NSMutableArray *extraInfoArray = [[NSMutableArray alloc] init];
     NSMutableDictionary *binaryImages = [[NSMutableDictionary alloc] init];
     BOOL hasLastExceptionBacktrace = NO;
-    BOOL isFilteredSignal = YES;
+    NSString *exceptionType = nil;
 
     for (NSString *line in inputLines) {
         // extraInfo:
@@ -325,8 +337,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         NSUInteger lastOpenParenthesis = [line rangeOfString:@"(" options:NSBackwardsSearch range:range].location;
                         if (lastOpenParenthesis < lastCloseParenthesis) {
                             range = NSMakeRange(lastOpenParenthesis + 1, lastCloseParenthesis - lastOpenParenthesis - 1);
-                            NSString *signalStr = [line substringWithRange:range];
-                            isFilteredSignal = isFilteredSignal && ![signalFilters containsObject:signalStr];
+                            exceptionType = [line substringWithRange:range];
                         }
                     }
                     break;
@@ -482,47 +493,20 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         bi->symbolAddresses = symbolAddressesForImageWithHeader(header);
                     }
 
-                    // Determine if binary image should not be blamed.
-                    if (hasHeaderFromSharedCacheWithPath && [bi->header isFromSharedCache]) {
-                        // Don't blame anything from the shared cache.
-                        bi->blamable = NO;
-                    } else {
-                        // Don't blame white-listed libraries.
-                        if ([filters containsObject:bi->path]) {
-                            bi->blamable = NO;
-                        } else {
-                            // Don't blame white-listed folders.
-                            for (NSString *prefix in prefixFilters) {
-                                if ([bi->path hasPrefix:prefix]) {
-                                    bi->blamable = NO;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
                     [binaryImages setObject:bi forKey:imageAddress];
                     [bi release];
                 }
 
-                // Determine if binary image should be blamed.
-                if (bi->blamable && (bi->line == 0 || ((bi->line & 0x80000000) && isCrashing))) {
-                    // Blame.
-                    bi->line = i;
-                    // Make it a secondary suspect if it isn't in the crashing thread.
-                    if (!isCrashing) {
-                        bi->line |= 0x80000000;
-                    }
-                }
-
                 // Add source/symbol information to the end of the output line.
-                NSString *lineComment = nil;
+                SymbolInfo *symbolInfo = nil;
                 if (bi->header != nil) {
                     uint64_t address = bti->address + bi->slide;
                     VMUSourceInfo *srcInfo = [bi->owner sourceInfoForAddress:address];
                     if (srcInfo != nil) {
-                        // Add source file name and line number.
-                        lineComment = [NSString stringWithFormat:@"\t// %@:%u", [srcInfo path], [srcInfo lineNumber]];
+                        // Store source file name and line number.
+                        symbolInfo = [SymbolInfo new];
+                        [symbolInfo setSourcePath:[srcInfo path]];
+                        [symbolInfo setSourceLineNumber:[srcInfo lineNumber]];
                     } else {
                         // Determine symbol address.
                         // NOTE: Only possible if LC_FUNCTION_STARTS exists in the binary.
@@ -537,7 +521,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             }
                         }
 
-                        // Attempt to add symbol name and hex offset.
+                        // Attempt to retrieve symbol name and hex offset.
                         NSString *name = nil;
                         uint64_t offset = 0;
                         VMUSymbol *symbol = [bi->owner symbolForAddress:address];
@@ -599,24 +583,27 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         }
 
                         if (name != nil) {
-                            lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", name, offset];
-
-                            // Check symbol name against blame filters.
-                            if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"]) {
-                                if (isCrashing) {
-                                    // Check if this function should never cause crash (only hang).
-                                    if ([functionFilters containsObject:name]) {
-                                        isCrashing = NO;
-                                    }
-                                } else {
-                                    // Check if this function is actually causing crash.
-                                    if ([reverseFilters containsObject:name]) {
-                                        isCrashing = YES;
-                                    }
-                                }
-                            }
+                            symbolInfo = [SymbolInfo new];
+                            [symbolInfo setName:name];
+                            [symbolInfo setOffset:offset];
                         }
                     }
+                }
+
+                NSString *lineComment = nil;
+                if (symbolInfo != nil) {
+                    NSString *sourcePath = [symbolInfo sourcePath];
+                    if (sourcePath != nil) {
+                        lineComment = [NSString stringWithFormat:@"\t// %@:%u", sourcePath, [symbolInfo sourceLineNumber]];
+                    } else {
+                        NSString *name = [symbolInfo name];
+                        if (name != nil) {
+                            lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", name, [symbolInfo offset]];
+                        }
+                    }
+
+                    [bti setSymbolInfo:symbolInfo];
+                    [symbolInfo release];
                 }
 
                 // Write out line of backtrace.
@@ -636,50 +623,129 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
 skip_this_line:
         ++i;
     }
-    [extraInfoArray release];
+
+    if (blameInfo != NULL) {
+        *blameInfo = [blame(exceptionType, binaryImages, extraInfoArray) retain];
+    }
+    [binaryImages release];
+
+    [pool drain];
+
+    if (blameInfo != NULL) {
+        [*blameInfo autorelease];
+    }
+
+    [outputLines autorelease];
+    return [outputLines componentsJoinedByString:@"\n"];
+}
+
+NSArray *blame(NSString *exceptionType, NSDictionary *binaryImages, NSArray *backtraceLines) {
+    NSMutableArray *result = nil;
+
+    // Load blame filters.
+    NSDictionary *whiteListFile = [[NSDictionary alloc] initWithContentsOfFile:@"/etc/symbolicate/whitelist.plist"];
+    NSSet *filters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"Filters"]];
+    NSSet *functionFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"FunctionFilters"]];
+    NSSet *prefixFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"PrefixFilters"]];
+    NSSet *reverseFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"ReverseFunctionFilters"]];
+    NSSet *signalFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"SignalFilters"]];
+    [whiteListFile release];
+
+    // If exception type is not whitelisted, process blame.
+    if (![signalFilters containsObject:exceptionType]) {
+        // Mark which binary images are unblamable.
+        Class $BinaryInfo = [BinaryInfo class];
+        BOOL hasHeaderFromSharedCacheWithPath = [VMUMemory_File respondsToSelector:@selector(headerFromSharedCacheWithPath:)];
+        for (BinaryInfo *bi in binaryImages) {
+            if ([bi isKindOfClass:$BinaryInfo]) {
+                // Determine if binary image should not be blamed.
+                if (hasHeaderFromSharedCacheWithPath && [bi->header isFromSharedCache]) {
+                    // Don't blame anything from the shared cache.
+                    bi->blamable = NO;
+                } else {
+                    // Don't blame white-listed libraries.
+                    if ([filters containsObject:bi->path]) {
+                        bi->blamable = NO;
+                    } else {
+                        // Don't blame white-listed folders.
+                        for (NSString *prefix in prefixFilters) {
+                            if ([bi->path hasPrefix:prefix]) {
+                                bi->blamable = NO;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        NSUInteger i = 0;
+        BOOL isCrashing = NO;
+        for (BacktraceInfo *bti in backtraceLines) {
+            if (bti == (id)kCFBooleanTrue) {
+                isCrashing = YES;
+            } else if (bti == (id)kCFBooleanFalse) {
+                isCrashing = NO;
+            } else if (bti != (id)kCFNull) {
+                // Retrieve info for related binary image.
+                NSNumber *imageAddress = [NSNumber numberWithUnsignedLongLong:bti->imageAddress];
+                BinaryInfo *bi = [binaryImages objectForKey:imageAddress];
+                if (bi != nil) {
+                    // Determine if binary image should be blamed.
+                    if (bi->blamable && (bi->line == 0 || ((bi->line & 0x80000000) && isCrashing))) {
+                        // Blame.
+                        bi->line = i;
+                        // Make it a secondary suspect if it isn't in the crashing thread.
+                        if (!isCrashing) {
+                            bi->line |= 0x80000000;
+                        }
+                    }
+
+                    // Check symbol name of system functions against blame filters.
+                    if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"]) {
+                        SymbolInfo *symbolInfo = [bti symbolInfo];
+                        if (symbolInfo != nil) {
+                            NSString *name = [symbolInfo name];
+                            if (name != nil) {
+                                if (isCrashing) {
+                                    // Check if this function should never cause crash (only hang).
+                                    if ([functionFilters containsObject:name]) {
+                                        isCrashing = NO;
+                                    }
+                                } else {
+                                    // Check if this function is actually causing crash.
+                                    if ([reverseFilters containsObject:name]) {
+                                        isCrashing = YES;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ++i;
+        }
+
+        // Output blame info.
+        result = [NSMutableArray array];
+        for (NSNumber *key in binaryImages) {
+            BinaryInfo *bi = [binaryImages objectForKey:key];
+            if ([bi isKindOfClass:$BinaryInfo] && bi->blamable) {
+                NSArray *array = [[NSArray alloc] initWithObjects:bi->path, [NSNumber numberWithUnsignedInteger:bi->line], nil];
+                [result addObject:array];
+                [array release];
+            }
+        }
+    }
+
     [filters release];
     [functionFilters release];
     [prefixFilters release];
     [reverseFilters release];
     [signalFilters release];
 
-    /*
-    if (isFilteredSignal) {
-        for (NSString *name in binaryImages) {
-            BinaryInfo *bi = [binaryImages objectForKey:name];
-            if ([bi isKindOfClass:$BinaryInfo] && (bi->line & 0x80000000)) {
-                isFilteredSignal = NO;
-                break;
-            }
-        }
-    }
-    */
-
-    if (blame != NULL) {
-        // Copy down blame info.
-        if (isFilteredSignal) {
-            NSMutableArray *blameArray = [NSMutableArray new];
-            for (NSNumber *key in binaryImages) {
-                BinaryInfo *bi = [binaryImages objectForKey:key];
-                if ([bi isKindOfClass:$BinaryInfo] && bi->blamable) {
-                    NSArray *array = [[NSArray alloc] initWithObjects:bi->path, [NSNumber numberWithUnsignedInteger:bi->line], nil];
-                    [blameArray addObject:array];
-                    [array release];
-                }
-            }
-            *blame = blameArray;
-        }
-    }
-    [binaryImages release];
-
-    [pool drain];
-
-    if (blame != NULL) {
-        [*blame autorelease];
-    }
-
-    [outputLines autorelease];
-    return [outputLines componentsJoinedByString:@"\n"];
+    return result;
 }
 
 /* vim: set ft=objcpp ff=unix sw=4 ts=4 tw=80 expandtab: */
