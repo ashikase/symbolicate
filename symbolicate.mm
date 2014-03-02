@@ -20,6 +20,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #import "symbolicate.h"
 
+#import "BinaryInfo.h"
+#import "MethodInfo.h"
+
 #import <Foundation/Foundation.h>
 #include <mach-o/loader.h>
 #include <objc/runtime.h>
@@ -66,224 +69,8 @@ enum SymbolicationMode {
 }
 @end
 
-@interface BinaryInfo : NSObject {
-    @package
-        // slide = text address - actual address
-        uint64_t address;
-        int64_t slide;
-        VMUSymbolOwner *owner;
-        VMUMachOHeader *header;
-        NSArray *symbolAddresses;
-        NSArray *methods;
-        NSString *path;
-        NSUInteger line;
-        BOOL encrypted;
-        BOOL executable;
-        BOOL blamable;
-}
-@end
-@implementation BinaryInfo @end
-
-@interface MethodInfo : NSObject {
-    @package
-        uint64_t address;
-        NSString *name;
-}
-@end
-@implementation MethodInfo @end
-
 static uint64_t uint64FromHexString(NSString *string) {
     return (uint64_t)unsignedLongLongFromHexString([string UTF8String], [string length]);
-}
-
-static uint64_t linkCommandOffsetForHeader(VMUMachOHeader *header, uint64_t linkCommand) {
-    uint64_t cmdsize = 0;
-    Ivar ivar = class_getInstanceVariable([VMULoadCommand class], "_command");
-    for (VMULoadCommand *lc in [header loadCommands]) {
-        uint32_t cmd = (uint32_t)object_getIvar(lc, ivar);
-        if (cmd == linkCommand) {
-            return [header isMachO64] ?
-                sizeof(mach_header_64) + cmdsize :
-                sizeof(mach_header) + cmdsize;
-        }
-        cmdsize += [lc cmdSize];
-    }
-    return 0;
-}
-
-static BOOL isEncrypted(VMUMachOHeader *header) {
-    BOOL isEncrypted = NO;
-
-    uint64_t offset = linkCommandOffsetForHeader(header, LC_ENCRYPTION_INFO);
-    if (offset != 0) {
-        id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
-        @try {
-            [view setCursor:[header address] + offset + 16];
-            isEncrypted = ([view uint32] > 0);
-        } @catch (NSException *exception) {
-            fprintf(stderr, "WARNING: Exception '%s' generated when determining encryption status for %s.\n",
-                    [[exception reason] UTF8String], [[header path] UTF8String]);
-        }
-    }
-
-    return isEncrypted;
-}
-
-static CFComparisonResult ReversedCompareNSNumber(NSNumber *a, NSNumber *b) {
-    return [b compare:a];
-}
-
-static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
-    NSMutableArray *addresses = [NSMutableArray array];
-
-    uint64_t offset = linkCommandOffsetForHeader(header, LC_FUNCTION_STARTS);
-    if (offset != 0) {
-        id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
-        @try {
-            [view setCursor:[header address] + offset + 8];
-            uint32_t dataoff = [view uint32];
-            [view setCursor:dataoff];
-            uint64_t offset;
-            uint64_t symbolAddress = [[header segmentNamed:@"__TEXT"] vmaddr];
-            while ((offset = [view ULEB128])) {
-                symbolAddress += offset;
-                [addresses addObject:[NSNumber numberWithUnsignedLongLong:symbolAddress]];
-            }
-        } @catch (NSException *exception) {
-            fprintf(stderr, "WARNING: Exception '%s' generated when extracting symbol addresses for %s.\n",
-                    [[exception reason] UTF8String], [[header path] UTF8String]);
-        }
-    }
-
-    [addresses sortUsingFunction:(NSInteger (*)(id, id, void *))ReversedCompareNSNumber context:NULL];
-    return addresses;
-}
-
-static CFComparisonResult ReversedCompareMethodInfos(MethodInfo *a, MethodInfo *b) {
-    return (a->address > b->address) ? kCFCompareLessThan : (a->address < b->address) ? kCFCompareGreaterThan : kCFCompareEqualTo;
-}
-
-#define RO_META     (1 << 0)
-#define RW_REALIZED (1 << 31)
-
-NSArray *methodsForImageWithHeader(VMUMachOHeader *header) {
-    NSMutableArray *methods = [NSMutableArray array];
-
-    const BOOL isFromSharedCache = [header respondsToSelector:@selector(isFromSharedCache)] && [header isFromSharedCache];
-    const BOOL is64Bit = [header isMachO64];
-
-    VMUSegmentLoadCommand *textSeg = [header segmentNamed:@"__TEXT"];
-    int64_t vmdiff_text = [textSeg fileoff] - [textSeg vmaddr];
-
-    VMUSegmentLoadCommand *dataSeg = [header segmentNamed:@"__DATA"];
-    int64_t vmdiff_data = [dataSeg fileoff] - [dataSeg vmaddr];
-
-    id<VMUMemoryView> view = (id<VMUMemoryView>)[[header memory] view];
-    VMUSection *clsListSect = [dataSeg sectionNamed:@"__objc_classlist"];
-    @try {
-        [view setCursor:[clsListSect offset]];
-        const uint64_t numClasses = [clsListSect size] / (is64Bit ? sizeof(uint64_t) : sizeof(uint32_t));
-        for (uint64_t i = 0; i < numClasses; ++i) {
-            uint64_t class_t_address = is64Bit ? [view uint64] : [view uint32];
-            uint64_t next_class_t = [view cursor];
-
-            if (i == 0 && isFromSharedCache) {
-                // FIXME: Determine what this offset is and how to properly obtain it.
-                VMUSection *sect = [dataSeg sectionNamed:@"__objc_data"];
-                vmdiff_data -= (class_t_address - [sect addr]) / 0x1000 * 0x1000;
-            }
-            [view setCursor:vmdiff_data + class_t_address];
-
-process_class:
-            // Get address for meta class.
-            // NOTE: This is needed for retrieving class (non-instance) methods.
-            uint64_t isa;
-            if (is64Bit) {
-                isa = [view uint64];
-                [view advanceCursor:24];
-            } else {
-                isa = [view uint32];
-            [view advanceCursor:12];
-            }
-
-            // Confirm struct is actually class_ro_t (and not class_rw_t).
-            const uint64_t class_ro_t_address = is64Bit ? [view uint64] : [view uint32];
-            [view setCursor:vmdiff_data + class_ro_t_address];
-            const uint32_t flags = [view uint32];
-            if (!(flags & RW_REALIZED)) {
-                const char methodType = (flags & 1) ? '+' : '-';
-
-                uint64_t class_ro_t_name;
-                if (is64Bit) {
-                    [view advanceCursor:20];
-                    class_ro_t_name = [view uint64];
-                } else {
-                [view advanceCursor:12];
-                    class_ro_t_name = [view uint32];
-                }
-                if (i == 0 && isFromSharedCache && !(flags & RO_META)) {
-                    // FIXME: Determine what this offset is and how to properly obtain it.
-                    VMUSection *sect = [textSeg sectionNamed:@"__objc_classname"];
-                    vmdiff_text -= (class_ro_t_name - [sect addr]) / 0x1000 * 0x1000;
-                }
-                [view setCursor:[header address] + vmdiff_text + class_ro_t_name];
-                NSString *className = [view stringWithEncoding:NSUTF8StringEncoding];
-
-                uint64_t baseMethods;
-                if (is64Bit) {
-                    [view setCursor:vmdiff_data + class_ro_t_address + 40];
-                    baseMethods = [view uint64];
-                } else {
-                [view setCursor:vmdiff_data + class_ro_t_address + 20];
-                    baseMethods = [view uint32];
-                }
-                if (baseMethods != 0) {
-                    [view setCursor:vmdiff_data + baseMethods];
-                    const uint32_t entsize = [view uint32];
-                    if (entsize == 12 || entsize == 15) {
-                        uint32_t count = [view uint32];
-                        for (uint32_t j = 0; j < count; ++j) {
-                            MethodInfo *mi = [[MethodInfo alloc] init];
-                            const uint64_t sel = is64Bit ? [view uint64] : [view uint32];
-                            NSString *methodName = nil;
-                            if (entsize == 15) {
-                                // Pre-optimized selector
-                                methodName = [[NSString alloc] initWithCString:(const char *)sel encoding:NSUTF8StringEncoding];
-                            } else {
-                                const uint64_t loc = [view cursor];
-                                [view setCursor:[header address] + vmdiff_text + sel];
-                                methodName = [[view stringWithEncoding:NSUTF8StringEncoding] retain];
-                                [view setCursor:loc];
-                            }
-                            mi->name = [NSString stringWithFormat:@"%c[%@ %@]", methodType, className, methodName];
-                            [methodName release];
-                            if (is64Bit) {
-                                [view uint64]; // Skip 'types'
-                                mi->address = [view uint64];
-                            } else {
-                                [view uint32]; // Skip 'types'
-                            mi->address = [view uint32];
-                            }
-                            [methods addObject:mi];
-                            [mi release];
-                        }
-                    }
-                }
-            }
-            if (!(flags & RO_META)) {
-                [view setCursor:vmdiff_data + isa];
-                goto process_class;
-            } else {
-                [view setCursor:next_class_t];
-            }
-        }
-    } @catch (NSException *exception) {
-        fprintf(stderr, "WARNING: Exception '%s' generated when extracting methods for %s.\n",
-                [[exception reason] UTF8String], [[header path] UTF8String]);
-    }
-
-    [methods sortUsingFunction:(NSInteger (*)(id, id, void *))ReversedCompareMethodInfos context:NULL];
-    return methods;
 }
 
 static BacktraceInfo *extractBacktraceInfo(NSString *line) {
@@ -467,39 +254,17 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                     // Create a BinaryInfo object for the image
                     NSArray *array = (NSArray *)bi;
                     NSString *matches[] = {[array objectAtIndex:1], [array objectAtIndex:2], [array objectAtIndex:3]};
-                    bi = [[BinaryInfo alloc] init];
+                    bi = [[BinaryInfo alloc] initWithPath:matches[2]];
                     bi->address = uint64FromHexString(matches[0]);
-                    bi->path = matches[2];
                     bi->blamable = YES;
-
-                    // Get Mach-O header for the image
-                    VMUMachOHeader *header = nil;
-                    if (hasHeaderFromSharedCacheWithPath) {
-                        header = [VMUMemory_File headerFromSharedCacheWithPath:matches[2]];
-                    }
-                    if (header == nil) {
-                        header = [VMUMemory_File headerWithPath:matches[2]];
-                    }
-                    if (![header isKindOfClass:[VMUMachOHeader class]]) {
-                        header = [[VMUHeader extractMachOHeadersFromHeader:header matchingArchitecture:[VMUArchitecture currentArchitecture] considerArchives:NO] lastObject];
-                    }
-                    if (header != nil) {
-                        uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
-                        bi->slide = textStart - bi->address;
-                        bi->owner = [VMUSymbolExtractor extractSymbolOwnerFromHeader:header];
-                        bi->header = header;
-                        bi->encrypted = isEncrypted(bi->header);
-                        bi->executable = ([header fileType] == MH_EXECUTE);
-                        bi->symbolAddresses = symbolAddressesForImageWithHeader(header);
-                    }
-
                     [binaryImages setObject:bi forKey:imageAddress];
                     [bi release];
                 }
 
                 // Add source/symbol information to the end of the output line.
                 SymbolInfo *symbolInfo = nil;
-                if (bi->header != nil) {
+                VMUMachOHeader *header = [bi header];
+                if (header != nil) {
                     uint64_t address = bti->address + bi->slide;
                     VMUSourceInfo *srcInfo = [bi->owner sourceInfoForAddress:address];
                     if (srcInfo != nil) {
@@ -514,7 +279,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                         NSUInteger count = [bi->symbolAddresses count];
                         if (count != 0) {
                             NSNumber *targetAddress = [[NSNumber alloc] initWithUnsignedLongLong:address];
-                            CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->symbolAddresses, CFRangeMake(0, count), targetAddress, (CFComparatorFunction)ReversedCompareNSNumber, NULL);
+                            CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->symbolAddresses, CFRangeMake(0, count), targetAddress, (CFComparatorFunction)reversedCompareNSNumber, NULL);
                             [targetAddress release];
                             if (matchIndex < (CFIndex)count) {
                                 symbolAddress = [[bi->symbolAddresses objectAtIndex:matchIndex] unsignedLongLongValue];
@@ -531,11 +296,11 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             //}
                             name = [symbol name];
                             if ([name isEqualToString:@"<redacted>"] && hasHeaderFromSharedCacheWithPath) {
-                                NSString *localName = nameForLocalSymbol([bi->header address], [symbol addressRange].location);
+                                NSString *localName = nameForLocalSymbol([header address], [symbol addressRange].location);
                                 if (localName != nil) {
                                     name = localName;
                                 } else {
-                                    fprintf(stderr, "Unable to determine name for: %s, 0x%08llx\n", [bi->path UTF8String], [symbol addressRange].location);
+                                    fprintf(stderr, "Unable to determine name for: %s, 0x%08llx\n", [[bi path] UTF8String], [symbol addressRange].location);
                                 }
                             }
                             // Attempt to demangle name
@@ -543,7 +308,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             //       names, so we attempt to do it ourselves.
                             name = demangle(name);
                             offset = address - [symbol addressRange].location;
-                        } else if (NSDictionary *map = [symbolMaps objectForKey:bi->path]) {
+                        } else if (NSDictionary *map = [symbolMaps objectForKey:[bi path]]) {
                             for (NSNumber *number in [[[map allKeys] sortedArrayUsingSelector:@selector(compare:)] reverseObjectEnumerator]) {
                                 uint64_t mapSymbolAddress = [number unsignedLongLongValue];
                                 if (address > mapSymbolAddress) {
@@ -556,18 +321,16 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                             // Determine methods, attempt to match with symbol address.
                             if (symbolAddress != 0) {
                                 MethodInfo *method = nil;
-                                if (bi->methods == nil) {
-                                    bi->methods = methodsForImageWithHeader(bi->header);
-                                }
-                                count = [bi->methods count];
+                                NSArray *methods = [bi methods];
+                                count = [methods count];
                                 if (count != 0) {
                                     MethodInfo *targetMethod = [[MethodInfo alloc] init];
                                     targetMethod->address = address;
-                                    CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->methods, CFRangeMake(0, count), targetMethod, (CFComparatorFunction)ReversedCompareMethodInfos, NULL);
+                                    CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)methods, CFRangeMake(0, count), targetMethod, (CFComparatorFunction)reversedCompareMethodInfos, NULL);
                                     [targetMethod release];
 
                                     if (matchIndex < (CFIndex)count) {
-                                        method = [bi->methods objectAtIndex:matchIndex];
+                                        method = [methods objectAtIndex:matchIndex];
                                     }
                                 }
 
@@ -575,7 +338,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                                     name = method->name;
                                     offset = address - method->address;
                                 } else {
-                                    uint64_t textStart = [[bi->header segmentNamed:@"__TEXT"] vmaddr];
+                                    uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
                                     name = [NSString stringWithFormat:@"0x%08llx", (symbolAddress - textStart)];
                                     offset = address - symbolAddress;
                                 }
@@ -611,7 +374,7 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                          bti->address, bi->address, bti->address - bi->address];
                 NSString *newLine = [[NSString alloc] initWithFormat:@"%-6u%s%-30s\t%-32s%@",
                          bti->depth, bi->blamable ? "+ " : "  ",
-                         [[[bi->path lastPathComponent] stringByAppendingString:(bi->executable ? @" (*)" : @"")] UTF8String],
+                         [[[[bi path] lastPathComponent] stringByAppendingString:(bi->executable ? @" (*)" : @"")] UTF8String],
                          [addressString UTF8String], lineComment ?: @""];
                 [addressString release];
                 [outputLines replaceObjectAtIndex:i withObject:newLine];
@@ -659,17 +422,18 @@ NSArray *blame(NSString *exceptionType, NSDictionary *binaryImages, NSArray *bac
         for (BinaryInfo *bi in binaryImages) {
             if ([bi isKindOfClass:$BinaryInfo]) {
                 // Determine if binary image should not be blamed.
-                if (hasHeaderFromSharedCacheWithPath && [bi->header isFromSharedCache]) {
+                if (hasHeaderFromSharedCacheWithPath && [[bi header] isFromSharedCache]) {
                     // Don't blame anything from the shared cache.
                     bi->blamable = NO;
                 } else {
                     // Don't blame white-listed libraries.
-                    if ([filters containsObject:bi->path]) {
+                    NSString *path = [bi path];
+                    if ([filters containsObject:path]) {
                         bi->blamable = NO;
                     } else {
                         // Don't blame white-listed folders.
                         for (NSString *prefix in prefixFilters) {
-                            if ([bi->path hasPrefix:prefix]) {
+                            if ([path hasPrefix:prefix]) {
                                 bi->blamable = NO;
                                 break;
                             }
@@ -702,7 +466,7 @@ NSArray *blame(NSString *exceptionType, NSDictionary *binaryImages, NSArray *bac
                     }
 
                     // Check symbol name of system functions against blame filters.
-                    if ([bi->path isEqualToString:@"/usr/lib/libSystem.B.dylib"]) {
+                    if ([[bi path] isEqualToString:@"/usr/lib/libSystem.B.dylib"]) {
                         SymbolInfo *symbolInfo = [bti symbolInfo];
                         if (symbolInfo != nil) {
                             NSString *name = [symbolInfo name];
@@ -732,7 +496,7 @@ NSArray *blame(NSString *exceptionType, NSDictionary *binaryImages, NSArray *bac
         for (NSNumber *key in binaryImages) {
             BinaryInfo *bi = [binaryImages objectForKey:key];
             if ([bi isKindOfClass:$BinaryInfo] && bi->blamable) {
-                NSArray *array = [[NSArray alloc] initWithObjects:bi->path, [NSNumber numberWithUnsignedInteger:bi->line], nil];
+                NSArray *array = [[NSArray alloc] initWithObjects:[bi path], [NSNumber numberWithUnsignedInteger:bi->line], nil];
                 [result addObject:array];
                 [array release];
             }
