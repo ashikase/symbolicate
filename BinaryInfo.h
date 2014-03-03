@@ -2,22 +2,20 @@
 
 #include "Headers.h"
 
-@interface BinaryInfo : NSObject {
-    @package
-        // slide = text address - actual address
-        uint64_t address;
-        int64_t slide;
-        VMUSymbolOwner *owner;
-        NSArray *symbolAddresses;
-        NSUInteger line;
-        BOOL encrypted;
-        BOOL executable;
-        BOOL blamable;
-}
+@interface BinaryInfo : NSObject
+@property(nonatomic, readonly) uint64_t address;
+@property(nonatomic, readonly, getter = isEncrypted) BOOL encrypted;
+@property(nonatomic, readonly, getter = isExecutable) BOOL executable;
 @property(nonatomic, readonly) VMUMachOHeader *header;
 @property(nonatomic, readonly) NSArray *methods;
+@property(nonatomic, readonly) VMUSymbolOwner *owner;
 @property(nonatomic, readonly) NSString *path;
-- (id)initWithPath:(NSString *)path;
+@property(nonatomic, readonly) int64_t slide;
+@property(nonatomic, readonly) NSArray *symbolAddresses;
+
+@property(nonatomic, getter = isBlamable) BOOL blamable;
+@property(nonatomic) NSUInteger line;
+- (id)initWithPath:(NSString *)path address:(uint64_t)address;
 @end
 
 CFComparisonResult reversedCompareNSNumber(NSNumber *a, NSNumber *b);

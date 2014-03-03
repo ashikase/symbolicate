@@ -93,8 +93,9 @@ SymbolInfo *fetchSymbolInfo(BinaryInfo *bi, uint64_t address, NSDictionary *symb
 
     VMUMachOHeader *header = [bi header];
     if (header != nil) {
-        address += bi->slide;
-        VMUSourceInfo *srcInfo = [bi->owner sourceInfoForAddress:address];
+        address += [bi slide];
+        VMUSymbolOwner *owner = [bi owner];
+        VMUSourceInfo *srcInfo = [owner sourceInfoForAddress:address];
         if (srcInfo != nil) {
             // Store source file name and line number.
             symbolInfo = [SymbolInfo new];
@@ -104,20 +105,21 @@ SymbolInfo *fetchSymbolInfo(BinaryInfo *bi, uint64_t address, NSDictionary *symb
             // Determine symbol address.
             // NOTE: Only possible if LC_FUNCTION_STARTS exists in the binary.
             uint64_t symbolAddress = 0;
-            NSUInteger count = [bi->symbolAddresses count];
+            NSArray *symbolAddresses = [bi symbolAddresses];
+            NSUInteger count = [symbolAddresses count];
             if (count != 0) {
                 NSNumber *targetAddress = [[NSNumber alloc] initWithUnsignedLongLong:address];
-                CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)bi->symbolAddresses, CFRangeMake(0, count), targetAddress, (CFComparatorFunction)reversedCompareNSNumber, NULL);
+                CFIndex matchIndex = CFArrayBSearchValues((CFArrayRef)symbolAddresses, CFRangeMake(0, count), targetAddress, (CFComparatorFunction)reversedCompareNSNumber, NULL);
                 [targetAddress release];
                 if (matchIndex < (CFIndex)count) {
-                    symbolAddress = [[bi->symbolAddresses objectAtIndex:matchIndex] unsignedLongLongValue];
+                    symbolAddress = [[symbolAddresses objectAtIndex:matchIndex] unsignedLongLongValue];
                 }
             }
 
             // Attempt to retrieve symbol name and hex offset.
             NSString *name = nil;
             uint64_t offset = 0;
-            VMUSymbol *symbol = [bi->owner symbolForAddress:address];
+            VMUSymbol *symbol = [owner symbolForAddress:address];
             if (symbol != nil && ([symbol addressRange].location == (symbolAddress & ~1) || symbolAddress == 0)) {
                 name = [symbol name];
                 if ([name isEqualToString:@"<redacted>"]) {
@@ -145,7 +147,7 @@ SymbolInfo *fetchSymbolInfo(BinaryInfo *bi, uint64_t address, NSDictionary *symb
                         break;
                     }
                 }
-            } else if (!bi->encrypted) {
+            } else if (![bi isEncrypted]) {
                 // Determine methods, attempt to match with symbol address.
                 if (symbolAddress != 0) {
                     MethodInfo *method = nil;
@@ -349,9 +351,8 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
                     // Create a BinaryInfo object for the image
                     NSArray *array = (NSArray *)bi;
                     NSString *matches[] = {[array objectAtIndex:1], [array objectAtIndex:2], [array objectAtIndex:3]};
-                    bi = [[BinaryInfo alloc] initWithPath:matches[2]];
-                    bi->address = uint64FromHexString(matches[0]);
-                    bi->blamable = YES;
+                    bi = [[BinaryInfo alloc] initWithPath:matches[2] address:uint64FromHexString(matches[0])];
+                    [bi setBlamable:YES];
                     [binaryImages setObject:bi forKey:imageAddress];
                     [bi release];
                 }
@@ -376,10 +377,10 @@ NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned prog
 
                 // Write out line of backtrace.
                 NSString *addressString = [[NSString alloc] initWithFormat:@"0x%08llx 0x%08llx + 0x%llx",
-                         bti->address, bi->address, bti->address - bi->address];
+                         bti->address, bti->imageAddress, bti->address - bti->imageAddress];
                 NSString *newLine = [[NSString alloc] initWithFormat:@"%-6u%s%-30s\t%-32s%@",
-                         bti->depth, bi->blamable ? "+ " : "  ",
-                         [[[[bi path] lastPathComponent] stringByAppendingString:(bi->executable ? @" (*)" : @"")] UTF8String],
+                         bti->depth, [bi isBlamable] ? "+ " : "  ",
+                         [[[[bi path] lastPathComponent] stringByAppendingString:([bi isExecutable] ? @" (*)" : @"")] UTF8String],
                          [addressString UTF8String], lineComment ?: @""];
                 [addressString release];
                 [outputLines replaceObjectAtIndex:i withObject:newLine];
@@ -427,23 +428,27 @@ NSArray *blame(NSString *exceptionType, NSDictionary *binaryImages, NSArray *bac
         for (BinaryInfo *bi in binaryImages) {
             if ([bi isKindOfClass:$BinaryInfo]) {
                 // Determine if binary image should not be blamed.
+                BOOL blamable = YES;
                 if (hasHeaderFromSharedCacheWithPath && [[bi header] isFromSharedCache]) {
                     // Don't blame anything from the shared cache.
-                    bi->blamable = NO;
+                    blamable = NO;
                 } else {
                     // Don't blame white-listed libraries.
                     NSString *path = [bi path];
                     if ([filters containsObject:path]) {
-                        bi->blamable = NO;
+                        blamable = NO;
                     } else {
                         // Don't blame white-listed folders.
                         for (NSString *prefix in prefixFilters) {
                             if ([path hasPrefix:prefix]) {
-                                bi->blamable = NO;
+                                blamable = NO;
                                 break;
                             }
                         }
                     }
+                }
+                if (!blamable) {
+                    [bi setBlamable:NO];
                 }
             }
         }
@@ -461,13 +466,15 @@ NSArray *blame(NSString *exceptionType, NSDictionary *binaryImages, NSArray *bac
                 BinaryInfo *bi = [binaryImages objectForKey:imageAddress];
                 if (bi != nil) {
                     // Determine if binary image should be blamed.
-                    if (bi->blamable && (bi->line == 0 || ((bi->line & 0x80000000) && isCrashing))) {
+                    NSInteger line = [bi line];
+                    if ([bi isBlamable] && (line == 0 || ((line & 0x80000000) && isCrashing))) {
                         // Blame.
-                        bi->line = i;
+                        line = i;
                         // Make it a secondary suspect if it isn't in the crashing thread.
                         if (!isCrashing) {
-                            bi->line |= 0x80000000;
+                            line |= 0x80000000;
                         }
+                        [bi setLine:line];
                     }
 
                     // Check symbol name of system functions against blame filters.
@@ -500,8 +507,8 @@ NSArray *blame(NSString *exceptionType, NSDictionary *binaryImages, NSArray *bac
         result = [NSMutableArray array];
         for (NSNumber *key in binaryImages) {
             BinaryInfo *bi = [binaryImages objectForKey:key];
-            if ([bi isKindOfClass:$BinaryInfo] && bi->blamable) {
-                NSArray *array = [[NSArray alloc] initWithObjects:[bi path], [NSNumber numberWithUnsignedInteger:bi->line], nil];
+            if ([bi isKindOfClass:$BinaryInfo] && [bi isBlamable]) {
+                NSArray *array = [[NSArray alloc] initWithObjects:[bi path], [NSNumber numberWithUnsignedInteger:[bi line]], nil];
                 [result addObject:array];
                 [array release];
             }

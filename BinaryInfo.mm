@@ -194,12 +194,13 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
 
 @synthesize header = _header;
 @synthesize methods = _methods;
-@synthesize path = _path;
+@synthesize symbolAddresses = _symbolAddresses;
 
-- (id)initWithPath:(NSString *)path {
+- (id)initWithPath:(NSString *)path address:(uint64_t)address {
     self = [super init];
     if (self != nil) {
         _path = [path copy];
+        _address = address;
     }
     return self;
 }
@@ -207,7 +208,9 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
 - (void)dealloc {
     [_header release];
     [_methods release];
+    [_owner release];
     [_path release];
+    [_symbolAddresses release];
     [super dealloc];
 }
 
@@ -227,11 +230,10 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
         }
         if (header != nil) {
             uint64_t textStart = [[header segmentNamed:@"__TEXT"] vmaddr];
-            slide = textStart - address;
-            owner = [VMUSymbolExtractor extractSymbolOwnerFromHeader:header];
-            encrypted = isEncrypted(header);
-            executable = ([header fileType] == MH_EXECUTE);
-            symbolAddresses = symbolAddressesForImageWithHeader(header);
+            _slide = textStart - _address;
+            _owner = [[VMUSymbolExtractor extractSymbolOwnerFromHeader:header] retain];
+            _encrypted = isEncrypted(header);
+            _executable = ([header fileType] == MH_EXECUTE);
 
             _header = [header retain];
         }
@@ -244,6 +246,13 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
         _methods = [methodsForImageWithHeader([self header]) retain];
     }
     return _methods;
+}
+
+- (NSArray *)symbolAddresses {
+    if (_symbolAddresses == nil) {
+        _symbolAddresses = [symbolAddressesForImageWithHeader([self header]) retain];
+    }
+    return _symbolAddresses;
 }
 
 @end
