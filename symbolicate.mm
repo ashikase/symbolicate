@@ -20,8 +20,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #import "symbolicate.h"
 
+#import "BacktraceInfo.h"
 #import "BinaryInfo.h"
 #import "MethodInfo.h"
+#import "SymbolInfo.h"
 
 #import <Foundation/Foundation.h>
 #include <mach-o/loader.h>
@@ -39,35 +41,6 @@ enum SymbolicationMode {
     SM_BacktraceMode,
     SM_BinaryImageMode,
 };
-
-@interface SymbolInfo : NSObject
-@property(nonatomic, copy) NSString *name;
-@property(nonatomic) uint64_t offset;
-@property(nonatomic, copy) NSString *sourcePath;
-@property(nonatomic) NSUInteger sourceLineNumber;
-@end
-@implementation SymbolInfo
-- (void)dealloc {
-    [_name release];
-    [_sourcePath release];
-    [super dealloc];
-}
-@end
-
-@interface BacktraceInfo : NSObject {
-    @package
-        NSUInteger depth;
-        uint64_t imageAddress;
-        uint64_t address;
-}
-@property(nonatomic, retain) SymbolInfo *symbolInfo;
-@end
-@implementation BacktraceInfo
-- (void)dealloc {
-    [_symbolInfo release];
-    [super dealloc];
-}
-@end
 
 static uint64_t uint64FromHexString(NSString *string) {
     return (uint64_t)unsignedLongLongFromHexString([string UTF8String], [string length]);

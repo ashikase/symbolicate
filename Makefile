@@ -3,8 +3,10 @@ PKG_ID = jp.ashikase.symbolicate
 
 symbolicate_INSTALL_PATH = /usr/bin
 symbolicate_OBJC_FILES = \
+    BacktraceInfo.mm \
     BinaryInfo.mm \
     MethodInfo.mm \
+    SymbolInfo.mm \
     common.c \
     demangle.mm \
     localSymbols.mm \
