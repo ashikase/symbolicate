@@ -12,6 +12,7 @@ symbolicate_OBJC_FILES = \
     localSymbols.mm \
     main.m \
     RegexKitLite.m \
+    crashreport.mm \
     symbolicate.mm \
     symbolMaps.m
 symbolicate_LDFLAGS = -lbz2 -licucore

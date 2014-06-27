@@ -18,14 +18,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-@class NSString, NSDictionary;
+@class BinaryInfo;
+@class NSDictionary;
+@class SymbolInfo;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned progressStepping, NSArray **blameInfo);
-NSArray *blame(NSString *exceptionType, NSDictionary *binaryImages, NSArray *backtraceLines);
+SymbolInfo *fetchSymbolInfo(BinaryInfo *bi, uint64_t address, NSDictionary *symbolMap);
 
 #ifdef __cplusplus
 }

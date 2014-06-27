@@ -21,8 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <getopt.h>
 #include <string.h>
 
+#import "crashreport.h"
 #import "symbolMaps.h"
-#import "symbolicate.h"
 
 static void print_usage() {
     fprintf(stderr,
