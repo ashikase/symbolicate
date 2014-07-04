@@ -576,9 +576,6 @@ static uint64_t uint64FromHexString(NSString *string) {
                         comment = [[NSString alloc] initWithFormat:@"\t// %@ + 0x%llx", name, [symbolInfo offset]];
                     }
                 }
-
-                [stackFrame setSymbolInfo:symbolInfo];
-                [symbolInfo release];
             }
 
             NSString *string = [[NSString alloc] initWithFormat:@"%-6u%s%-30s\t%-32s%@",
