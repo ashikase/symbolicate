@@ -241,9 +241,9 @@ static uint64_t uint64FromHexString(NSString *string) {
 - (void)dealloc {
     [properties_ release];
     [processInfo_ release];
-    [registerState_ release];
     [exception_ release];
     [threads_ release];
+    [registerState_ release];
     [binaryImages_ release];
     [super dealloc];
 }
@@ -354,7 +354,7 @@ static uint64_t uint64FromHexString(NSString *string) {
 #pragma mark - Private Methods
 
 - (void)parse {
-    NSString *description = [self.properties objectForKey:kCrashReportDescription];
+    NSString *description = [[self properties] objectForKey:kCrashReportDescription];
     if (description != nil) {
         // Create variables to store parsed information.
         NSMutableArray *processInfo = [NSMutableArray new];
@@ -428,11 +428,10 @@ static uint64_t uint64FromHexString(NSString *string) {
                             }
                             [thread setCrashed:([line rangeOfString:@"Crashed"].location != NSNotFound)];
                         } else {
-                            CRStackFrame *stackFrame = nil;
                             NSArray *array = [line captureComponentsMatchedByRegex:@"^(\\d+)\\s+.*\\S\\s+(?:0x)?([0-9a-f]+) (?:0x)?([0-9a-f]+) \\+ (?:0x)?\\d+"];
                             if ([array count] == 4) {
                                 NSString *matches[] = {[array objectAtIndex:1], [array objectAtIndex:2], [array objectAtIndex:3]};
-                                stackFrame = [CRStackFrame new];
+                                CRStackFrame *stackFrame = [CRStackFrame new];
                                 stackFrame.depth = [matches[0] intValue];
                                 stackFrame.address = uint64FromHexString(matches[1]);
                                 stackFrame.imageAddress = uint64FromHexString(matches[2]);
@@ -480,7 +479,7 @@ static uint64_t uint64FromHexString(NSString *string) {
                 case ModeBinaryImage: {
                     NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *0x([0-9a-f]+) [ +]?(?:.+?) (arm\\w*)  (<[0-9a-f]{32}> )?(.+)$"];
                     NSUInteger count = [array count];
-                    if (count == 5 || count == 6) {
+                    if ((count == 5) || (count == 6)) {
                         uint64_t imageAddress = uint64FromHexString([array objectAtIndex:1]);
                         uint64_t size = imageAddress - uint64FromHexString([array objectAtIndex:2]);
                         BinaryInfo *bi = [[BinaryInfo alloc] initWithPath:[array objectAtIndex:(count - 1)] address:imageAddress];
