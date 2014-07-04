@@ -297,12 +297,13 @@ static uint64_t uint64FromHexString(NSString *string) {
 
     // Prepare array of image start addresses for determining symbols of exception.
     NSArray *imageAddresses = nil;
-    if ([exception stackFrames] != nil) {
+    NSArray *stackFrames = [exception stackFrames];
+    if ([stackFrames count] > 0) {
         imageAddresses = [[[self binaryImages] allKeys] sortedArrayUsingSelector:@selector(compare:)];
     }
 
     // Symbolicate the exception (if backtrace exists).
-    for (CRStackFrame *stackFrame in [exception stackFrames]) {
+    for (CRStackFrame *stackFrame in stackFrames) {
         // Determine start address for this frame.
         if ([stackFrame imageAddress] == 0) {
             for (NSNumber *number in [imageAddresses reverseObjectEnumerator]) {
