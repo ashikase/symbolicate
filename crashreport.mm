@@ -602,8 +602,9 @@ static uint64_t uint64FromHexString(NSString *string) {
     for (NSString *key in imageAddresses) {
         BinaryInfo *bi = [binaryImages objectForKey:key];
         uint64_t imageAddress = [bi address];
+        NSString *path = [bi path];
         NSString *string = [[NSString alloc] initWithFormat:@"0x%08llx - 0x%08llx %@ %@  %@ %@",
-            imageAddress, imageAddress + [bi size], [[bi path] lastPathComponent], [bi architecture], [bi uuid], [bi path]];
+            imageAddress, imageAddress + [bi size], [path lastPathComponent], [bi architecture], [bi uuid], path];
         [description appendString:string];
         [description appendString:@"\n"];
         [string release];
