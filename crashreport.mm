@@ -192,7 +192,7 @@ static uint64_t uint64FromHexString(NSString *string) {
                 return nil;
             }
 
-            NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+            NSString *string = [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
             NSRange range = [string rangeOfCharacterFromSet:[NSCharacterSet newlineCharacterSet]];
             if ((range.location != NSNotFound) && ((range.location + 1) < [string length])) {
                 NSString *header = [string substringToIndex:range.location];
