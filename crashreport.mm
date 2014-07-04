@@ -406,6 +406,10 @@ static uint64_t uint64FromHexString(NSString *string) {
 
                 case ModeThread:
                     if ([line rangeOfString:@"Thread State"].location != NSNotFound) {
+                        if (thread != nil) {
+                            [threads addObject:thread];
+                            [thread release];
+                        }
                         [registerState addObject:line];
                         mode = ModeRegisterState;
                     } else if ([line length] > 0) {
