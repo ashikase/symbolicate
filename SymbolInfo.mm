@@ -2,9 +2,12 @@
 
 @implementation SymbolInfo
 
+@synthesize name = name_;
+@synthesize sourcePath = sourcePath_;
+
 - (void)dealloc {
-    [_name release];
-    [_sourcePath release];
+    [name_ release];
+    [sourcePath_ release];
     [super dealloc];
 }
 

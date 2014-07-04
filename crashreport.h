@@ -20,6 +20,8 @@ extern "C" {
 - (id)initWithFile:(NSString *)filepath;
 - (NSString *)report;
 - (NSString *)report:(BOOL)asPropertyList;
+- (void)symbolicate;
+- (void)symbolicateUsingSymbolMaps:(NSDictionary *)symbolMaps;
 - (BOOL)writeToFile:(NSString *)filepath forcePropertyList:(BOOL)forcePropertyList;
 @end
 

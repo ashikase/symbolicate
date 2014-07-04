@@ -96,8 +96,10 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-#if 0
             // Symbolicate threads in the report.
+            [report symbolicateUsingSymbolMaps:symbolMaps];
+
+#if 0
             NSArray *blame = nil;
             NSString *result = symbolicate(description, symbolMaps, progressStepping, &blame);
             if (result != nil) {

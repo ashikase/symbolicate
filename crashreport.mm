@@ -14,228 +14,6 @@
 static NSString * const kCrashReportDescription = @"description";
 
 #if 0
-NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned progressStepping, NSArray **blameInfo) {
-    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-
-    //BOOL alreadySymbolicated = [content isMatchedByRegex:@"<key>symbolicated</key>[\\n\\s]+<true\\s*/>"];
-    //if (alreadySymbolicated && [symbolMaps count] == 0) {
-    //    fprintf(stderr, "WARNING: File has already been symbolicated, and no symbol maps were provided for reprocessing.\n");
-    //    return nil;
-    //}
-
-    NSArray *inputLines = [[content stringByReplacingOccurrencesOfString:@"\r" withString:@""] componentsSeparatedByString:@"\n"];
-    NSMutableArray *outputLines = [[NSMutableArray alloc] init];
-    BOOL shouldNotifyOfProgress = (progressStepping > 0 && progressStepping < 100);
-
-    enum SymbolicationMode mode = SM_CheckingMode;
-    NSMutableArray *extraInfoArray = [[NSMutableArray alloc] init];
-    NSMutableDictionary *binaryImages = [[NSMutableDictionary alloc] init];
-    BOOL hasLastExceptionBacktrace = NO;
-    NSString *exceptionType = nil;
-
-    for (NSString *line in inputLines) {
-        // extraInfo:
-        //   - true = start of crashing thread.
-        //   - false = start of non-crashing thread.
-        //   - BacktraceInfo = backtrace info :)
-        //   - null = irrelevant.
-        id extraInfo = [NSNull null];
-
-        switch (mode) {
-            case SM_CheckingMode:
-                if ([line hasPrefix:@"Exception Type:"]) {
-                    NSUInteger lastCloseParenthesis = [line rangeOfString:@")" options:NSBackwardsSearch].location;
-                    if (lastCloseParenthesis != NSNotFound) {
-                        NSRange range = NSMakeRange(0, lastCloseParenthesis);
-                        NSUInteger lastOpenParenthesis = [line rangeOfString:@"(" options:NSBackwardsSearch range:range].location;
-                        if (lastOpenParenthesis < lastCloseParenthesis) {
-                            range = NSMakeRange(lastOpenParenthesis + 1, lastCloseParenthesis - lastOpenParenthesis - 1);
-                            exceptionType = [line substringWithRange:range];
-                        }
-                    }
-                    break;
-                } else if ([line hasPrefix:@"Last Exception Backtrace:"]) {
-                    hasLastExceptionBacktrace = YES;
-                    //mode = alreadySymbolicated ? SM_BacktraceMode : SM_ExceptionMode;
-                    mode = SM_ExceptionMode;
-                    break;
-                } else if (![line hasPrefix:@"Thread 0"]) {
-                    break;
-                } else {
-                    // Start of thread 0; fall-through to next case.
-                    mode = SM_BacktraceMode;
-                }
-
-            case SM_BacktraceMode:
-                if ([line isEqualToString:@"Binary Images:"]) {
-                    mode = SM_BinaryImageMode;
-                } else if ([line length] > 0) {
-                    if ([line hasSuffix:@":"]) {
-                        extraInfo = ([line rangeOfString:@"Crashed"].location != NSNotFound) ? (id)kCFBooleanTrue : (id)kCFBooleanFalse;
-                    } else {
-                        BacktraceInfo *bti = extractBacktraceInfo(line);
-                        if (bti != nil) {
-                            extraInfo = bti;
-                        }
-                    }
-                }
-                break;
-
-            case SM_ExceptionMode: {
-                mode = SM_CheckingMode;
-
-                NSUInteger lastCloseParenthesis = [line rangeOfString:@")" options:NSBackwardsSearch].location;
-                if (lastCloseParenthesis != NSNotFound) {
-                    NSRange range = NSMakeRange(0, lastCloseParenthesis);
-                    NSUInteger firstOpenParenthesis = [line rangeOfString:@"(" options:0 range:range].location;
-                    if (firstOpenParenthesis < lastCloseParenthesis) {
-                        NSUInteger depth = 0;
-                        range = NSMakeRange(firstOpenParenthesis + 1, lastCloseParenthesis - firstOpenParenthesis - 1);
-                        NSArray *array = [[line substringWithRange:range] componentsSeparatedByString:@" "];
-                        for (NSString *address in array) {
-                            BacktraceInfo *bti = [[BacktraceInfo alloc] init];
-                            bti->depth = depth;
-                            bti->address = uint64FromHexString(address);
-                            bti->imageAddress = 0;
-                            [extraInfoArray addObject:bti];
-                            [bti release];
-                            ++depth;
-
-                            [outputLines addObject:[NSNull null]];
-                        }
-                        continue;
-                    }
-                }
-                break;
-            }
-
-            case SM_BinaryImageMode: {
-                NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *[0-9a-fx]+ [ +]?(.+?) arm\\w*  (?:<[0-9a-f]{32}> )?(.+)$"];
-                if ([array count] == 4) {
-                    NSString *match = [array objectAtIndex:1];
-                    uint64_t address = uint64FromHexString(match);
-                    [binaryImages setObject:array forKey:[NSNumber numberWithUnsignedLongLong:address]];
-                } else {
-                    mode = SM_CheckingMode;
-                }
-                break;
-            }
-        }
-
-        [outputLines addObject:line];
-        [extraInfoArray addObject:extraInfo];
-    }
-
-    NSUInteger i = 0;
-    BOOL isCrashing = NO;
-    Class $BinaryInfo = [BinaryInfo class];
-    NSUInteger total_lines = [extraInfoArray count];
-    NSUInteger last_percent = 0;
-
-    // Prepare array of image start addresses for determining symbols of exception.
-    NSArray *imageAddresses = nil;
-    if (hasLastExceptionBacktrace) {
-        imageAddresses = [[binaryImages allKeys] sortedArrayUsingSelector:@selector(compare:)];
-    }
-
-    for (BacktraceInfo *bti in extraInfoArray) {
-         if (shouldNotifyOfProgress) {
-             NSUInteger this_percent = MIN((NSUInteger)100, 200 * i / total_lines);
-             if (this_percent - last_percent >= progressStepping) {
-                 last_percent = this_percent;
-                 int token;
-                 notify_register_check(PKG_ID".progress", &token);
-                 notify_set_state(token, this_percent);
-                 notify_post(PKG_ID".progress");
-             }
-         }
-
-        if (bti == (id)kCFBooleanTrue) {
-            isCrashing = YES;
-        } else if (bti == (id)kCFBooleanFalse) {
-            isCrashing = NO;
-        } else if (bti != (id)kCFNull) {
-            // Determine start address for this backtrace line.
-            if (bti->imageAddress == 0) {
-                for (NSNumber *number in [imageAddresses reverseObjectEnumerator]) {
-                    uint64_t imageAddress = [number unsignedLongLongValue];
-                    if (bti->address > imageAddress) {
-                        bti->imageAddress = imageAddress;
-                        break;
-                    }
-                }
-            }
-
-            // Retrieve info for related binary image.
-            NSNumber *imageAddress = [NSNumber numberWithUnsignedLongLong:bti->imageAddress];
-            BinaryInfo *bi = [binaryImages objectForKey:imageAddress];
-            if (bi != nil) {
-                // NOTE: If image has not been processed yet, type will be NSArray.
-                if (![bi isKindOfClass:$BinaryInfo]) {
-                    // NOTE: Binary images are only processed as needed. Most
-                    //       likely only a small number of images were being
-                    //       called into at the time of the crash.
-
-                    // Create a BinaryInfo object for the image
-                    NSArray *array = (NSArray *)bi;
-                    NSString *matches[] = {[array objectAtIndex:1], [array objectAtIndex:2], [array objectAtIndex:3]};
-                    bi = [[BinaryInfo alloc] initWithPath:matches[2] address:uint64FromHexString(matches[0])];
-                    [bi setBlamable:YES];
-                    [binaryImages setObject:bi forKey:imageAddress];
-                    [bi release];
-                }
-
-                NSString *lineComment = nil;
-                NSDictionary *symbolMap = [symbolMaps objectForKey:[bi path]];
-                SymbolInfo *symbolInfo = fetchSymbolInfo(bi, bti->address, symbolMap);
-                if (symbolInfo != nil) {
-                    NSString *sourcePath = [symbolInfo sourcePath];
-                    if (sourcePath != nil) {
-                        lineComment = [NSString stringWithFormat:@"\t// %@:%u", sourcePath, [symbolInfo sourceLineNumber]];
-                    } else {
-                        NSString *name = [symbolInfo name];
-                        if (name != nil) {
-                            lineComment = [NSString stringWithFormat:@"\t// %@ + 0x%llx", name, [symbolInfo offset]];
-                        }
-                    }
-
-                    [bti setSymbolInfo:symbolInfo];
-                    [symbolInfo release];
-                }
-
-                // Write out line of backtrace.
-                NSString *addressString = [[NSString alloc] initWithFormat:@"0x%08llx 0x%08llx + 0x%llx",
-                         bti->address, bti->imageAddress, bti->address - bti->imageAddress];
-                NSString *newLine = [[NSString alloc] initWithFormat:@"%-6u%s%-30s\t%-32s%@",
-                         bti->depth, [bi isBlamable] ? "+ " : "  ",
-                         [[[[bi path] lastPathComponent] stringByAppendingString:([bi isExecutable] ? @" (*)" : @"")] UTF8String],
-                         [addressString UTF8String], lineComment ?: @""];
-                [addressString release];
-                [outputLines replaceObjectAtIndex:i withObject:newLine];
-                [newLine release];
-
-            }
-        }
-
-//skip_this_line:
-        ++i;
-    }
-
-    if (blameInfo != NULL) {
-        *blameInfo = [blame(exceptionType, binaryImages, extraInfoArray) retain];
-    }
-    [binaryImages release];
-
-    [pool drain];
-
-    if (blameInfo != NULL) {
-        [*blameInfo autorelease];
-    }
-
-    [outputLines autorelease];
-    return [outputLines componentsJoinedByString:@"\n"];
-}
-
 NSArray *blame(NSString *exceptionType, NSDictionary *binaryImages, NSArray *backtraceLines) {
     NSMutableArray *result = nil;
 
@@ -509,13 +287,32 @@ static uint64_t uint64FromHexString(NSString *string) {
                 @"???" :
                 [[[bi path] lastPathComponent] stringByAppendingString:([bi isExecutable] ? @" (*)" : @"")];
 
+            NSString *comment = nil;
+            SymbolInfo *symbolInfo = [stackFrame symbolInfo];
+            if (symbolInfo != nil) {
+                NSString *sourcePath = [symbolInfo sourcePath];
+                if (sourcePath != nil) {
+                    comment = [[NSString alloc] initWithFormat:@"\t// %@:%u", sourcePath, [symbolInfo sourceLineNumber]];
+                } else {
+                    NSString *name = [symbolInfo name];
+                    if (name != nil) {
+                        comment = [[NSString alloc] initWithFormat:@"\t// %@ + 0x%llx", name, [symbolInfo offset]];
+                    }
+                }
+
+                [stackFrame setSymbolInfo:symbolInfo];
+                [symbolInfo release];
+            }
+
             NSString *string = [[NSString alloc] initWithFormat:@"%-6u%s%-30s\t%-32s%@",
-                        stackFrame.depth, [bi isBlamable] ? "+ " : "  ", [binaryName UTF8String],
-                        [addressString UTF8String], @""]; // lineComment ?: @""];
+                        [stackFrame depth], [bi isBlamable] ? "+ " : "  ", [binaryName UTF8String],
+                        [addressString UTF8String], comment ?: @""];
+            [addressString release];
+            [comment release];
+
             [description appendString:string];
             [description appendString:@"\n"];
             [string release];
-            [addressString release];
         }
         [description appendString:@"\n"];
     }
@@ -694,6 +491,42 @@ static uint64_t uint64FromHexString(NSString *string) {
     }
 }
 
+- (void)symbolicate {
+    [self symbolicateUsingSymbolMaps:nil];
+}
+
+- (void)symbolicateUsingSymbolMaps:(NSDictionary *)symbolMaps {
+    CRException *exception = [self exception];
+
+    // Prepare array of image start addresses for determining symbols of exception.
+    NSArray *imageAddresses = nil;
+    if ([exception stackFrames] != nil) {
+        imageAddresses = [[[self binaryImages] allKeys] sortedArrayUsingSelector:@selector(compare:)];
+    }
+
+    // Symbolicate the exception (if backtrace exists).
+    for (CRStackFrame *stackFrame in [exception stackFrames]) {
+        // Determine start address for this frame.
+        if ([stackFrame imageAddress] == 0) {
+            for (NSNumber *number in [imageAddresses reverseObjectEnumerator]) {
+                uint64_t imageAddress = [number unsignedLongLongValue];
+                if ([stackFrame address] > imageAddress) {
+                    [stackFrame setImageAddress:imageAddress];
+                    break;
+                }
+            }
+        }
+        [self symbolicateStackFrame:stackFrame usingSymbolMaps:symbolMaps];
+    }
+
+    // Symbolicate the threads.
+    for (CRThread *thread in [self threads]) {
+        for (CRStackFrame *stackFrame in [thread stackFrames]) {
+            [self symbolicateStackFrame:stackFrame usingSymbolMaps:symbolMaps];
+        }
+    }
+}
+
 - (NSString *)report {
     return [self report:[self isPropertyList]];
 }
@@ -705,15 +538,18 @@ static uint64_t uint64FromHexString(NSString *string) {
     if (asPropertyList) {
         // Generate property list string.
         NSError *error = nil;
-        NSData *data = [NSPropertyListSerialization dataWithPropertyList:properties format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
+        NSMutableDictionary *dict = [[NSMutableDictionary alloc] initWithDictionary:properties];
+        [dict setObject:[self description] forKey:kCrashReportDescription];
+        NSData *data = [NSPropertyListSerialization dataWithPropertyList:dict format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
         if (data != nil) {
             report = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
         } else {
             fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
         }
+        [dict release];
     } else {
         // Generate IPS string.
-        NSString *description = [properties objectForKey:kCrashReportDescription];
+        NSString *description = [self description];
         NSMutableDictionary *header = [[NSMutableDictionary alloc] initWithDictionary:properties];
         [header removeObjectForKey:kCrashReportDescription];
 
@@ -726,6 +562,7 @@ static uint64_t uint64FromHexString(NSString *string) {
         } else {
             fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
         }
+        [header release];
     }
 
     return [report autorelease];
@@ -753,6 +590,19 @@ static uint64_t uint64FromHexString(NSString *string) {
     }
 
     return succeeded;
+}
+
+#pragma mark - Private Methods
+
+- (void)symbolicateStackFrame:(CRStackFrame *)stackFrame usingSymbolMaps:(NSDictionary *)symbolMaps {
+    // Retrieve symbol info from related binary image.
+    NSNumber *imageAddress = [NSNumber numberWithUnsignedLongLong:[stackFrame imageAddress]];
+    BinaryInfo *bi = [[self binaryImages] objectForKey:imageAddress];
+    if (bi != nil) {
+        NSDictionary *symbolMap = [symbolMaps objectForKey:[bi path]];
+        SymbolInfo *symbolInfo = fetchSymbolInfo(bi, [stackFrame address], symbolMap);
+        [stackFrame setSymbolInfo:symbolInfo];
+    }
 }
 
 @end
