@@ -250,6 +250,44 @@ static uint64_t uint64FromHexString(NSString *string) {
 
 #pragma mark - Public API (General)
 
+- (NSString *)stringRepresentation {
+    return [self stringRepresentation:[self isPropertyList]];
+}
+
+- (NSString *)stringRepresentation:(BOOL)asPropertyList {
+    NSString *result = nil;
+
+    if (asPropertyList) {
+        // Generate property list string.
+        NSError *error = nil;
+        NSData *data = [NSPropertyListSerialization dataWithPropertyList:[self properties] format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
+        if (data != nil) {
+            result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        } else {
+            fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
+        }
+    } else {
+        // Generate IPS string.
+        NSDictionary *properties = [self properties];
+        NSMutableDictionary *header = [[NSMutableDictionary alloc] initWithDictionary:properties];
+        [header removeObjectForKey:kCrashReportDescription];
+        NSString *description = [properties objectForKey:kCrashReportDescription];
+
+        NSError *error = nil;
+        NSData *data = [NSJSONSerialization dataWithJSONObject:header options:0 error:&error];
+        if (data != nil) {
+            NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+            result = [[NSString alloc] initWithFormat:@"%@\n%@", string, description];
+            [string release];
+        } else {
+            fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
+        }
+        [header release];
+    }
+
+    return [result autorelease];
+}
+
 - (void)symbolicate {
     [self symbolicateUsingSymbolMaps:nil];
 }
@@ -289,48 +327,10 @@ static uint64_t uint64FromHexString(NSString *string) {
     [self updateDescription];
 }
 
-- (NSString *)report {
-    return [self report:[self isPropertyList]];
-}
-
-- (NSString *)report:(BOOL)asPropertyList {
-    NSString *report = nil;
-
-    if (asPropertyList) {
-        // Generate property list string.
-        NSError *error = nil;
-        NSData *data = [NSPropertyListSerialization dataWithPropertyList:[self properties] format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
-        if (data != nil) {
-            report = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-        } else {
-            fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
-        }
-    } else {
-        // Generate IPS string.
-        NSDictionary *properties = [self properties];
-        NSMutableDictionary *header = [[NSMutableDictionary alloc] initWithDictionary:properties];
-        [header removeObjectForKey:kCrashReportDescription];
-        NSString *description = [properties objectForKey:kCrashReportDescription];
-
-        NSError *error = nil;
-        NSData *data = [NSJSONSerialization dataWithJSONObject:header options:0 error:&error];
-        if (data != nil) {
-            NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-            report = [[NSString alloc] initWithFormat:@"%@\n%@", string, description];
-            [string release];
-        } else {
-            fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
-        }
-        [header release];
-    }
-
-    return [report autorelease];
-}
-
 - (BOOL)writeToFile:(NSString *)filepath forcePropertyList:(BOOL)forcePropertyList {
     BOOL succeeded = NO;
 
-    NSString *report = [self report:([self isPropertyList] || forcePropertyList)];
+    NSString *report = [self stringRepresentation:([self isPropertyList] || forcePropertyList)];
     if (report != nil) {
         if (filepath != nil) {
             // Write to file.

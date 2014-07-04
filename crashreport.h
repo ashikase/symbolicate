@@ -18,8 +18,8 @@ extern "C" {
 + (CrashReport *)crashReportWithFile:(NSString *)filepath;
 - (id)initWithData:(NSData *)data;
 - (id)initWithFile:(NSString *)filepath;
-- (NSString *)report;
-- (NSString *)report:(BOOL)asPropertyList;
+- (NSString *)stringRepresentation;
+- (NSString *)stringRepresentation:(BOOL)asPropertyList;
 - (void)symbolicate;
 - (void)symbolicateUsingSymbolMaps:(NSDictionary *)symbolMaps;
 - (BOOL)writeToFile:(NSString *)filepath forcePropertyList:(BOOL)forcePropertyList;
