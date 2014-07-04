@@ -149,9 +149,9 @@ static uint64_t uint64FromHexString(NSString *string) {
 
 @synthesize properties = properties_;
 @synthesize processInfo = processInfo_;
-@synthesize registerState = registerState_;
 @synthesize exception = exception_;
 @synthesize threads = threads_;
+@synthesize registerState = registerState_;
 @synthesize binaryImages = binaryImages_;
 
 #pragma mark - Public API (Creation)
