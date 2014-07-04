@@ -1,11 +1,9 @@
 @class SymbolInfo;
 
-@interface BacktraceInfo : NSObject {
-    @package
-        NSUInteger depth;
-        uint64_t imageAddress;
-        uint64_t address;
-}
+@interface CRStackFrame : NSObject
+@property(nonatomic, assign) NSUInteger depth;
+@property(nonatomic, assign) uint64_t imageAddress;
+@property(nonatomic, assign) uint64_t address;
 @property(nonatomic, retain) SymbolInfo *symbolInfo;
 @end
 

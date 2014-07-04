@@ -206,6 +206,8 @@ static NSArray *symbolAddressesForImageWithHeader(VMUMachOHeader *header) {
 }
 
 - (void)dealloc {
+    [_uuid release];
+    [_architecture release];
     [_header release];
     [_methods release];
     [_owner release];

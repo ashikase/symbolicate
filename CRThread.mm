@@ -1,9 +1,11 @@
-#import "CRStackFrame.h"
+#import "CRThread.h"
 
-@implementation CRStackFrame
+@implementation CRThread
+
+@synthesize name = name_;
 
 - (void)dealloc {
-    [_symbolInfo release];
+    [name_ release];
     [super dealloc];
 }
 

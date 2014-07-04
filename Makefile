@@ -3,7 +3,10 @@ PKG_ID = jp.ashikase.symbolicate
 
 symbolicate_INSTALL_PATH = /usr/bin
 symbolicate_OBJC_FILES = \
-    BacktraceInfo.mm \
+    CRBacktrace.mm \
+    CRException.mm \
+    CRStackFrame.mm \
+    CRThread.mm \
     BinaryInfo.mm \
     MethodInfo.mm \
     SymbolInfo.mm \
@@ -17,7 +20,7 @@ symbolicate_OBJC_FILES = \
     symbolMaps.m
 symbolicate_LDFLAGS = -lbz2 -licucore
 symbolicate_PRIVATE_FRAMEWORKS = Symbolication
-ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\"
+ADDITIONAL_CFLAGS =  -DPKG_ID=\"$(PKG_ID)\"
 
 ARCHS = armv6
 TARGET = iphone

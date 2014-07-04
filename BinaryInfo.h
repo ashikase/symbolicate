@@ -15,6 +15,11 @@
 
 @property(nonatomic, getter = isBlamable) BOOL blamable;
 @property(nonatomic) NSUInteger line;
+
+@property(nonatomic, assign) uint64_t size;
+@property(nonatomic, copy) NSString *uuid;
+@property(nonatomic, copy) NSString *architecture;
+
 - (id)initWithPath:(NSString *)path address:(uint64_t)address;
 @end
 

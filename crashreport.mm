@@ -1,6 +1,9 @@
 #import "crashreport.h"
 
-#import "BacktraceInfo.h"
+#import "CRException.h"
+#import "CRThread.h"
+#import "CRStackFrame.h"
+
 #import "BinaryInfo.h"
 #import "RegexKitLite.h"
 #import "symbolicate.h"
@@ -8,32 +11,9 @@
 #include <notify.h>
 #include "common.h"
 
-enum SymbolicationMode {
-    SM_CheckingMode,
-    SM_ExceptionMode,
-    SM_BacktraceMode,
-    SM_BinaryImageMode,
-};
+static NSString * const kCrashReportDescription = @"description";
 
-static uint64_t uint64FromHexString(NSString *string) {
-    return (uint64_t)unsignedLongLongFromHexString([string UTF8String], [string length]);
-}
-
-static BacktraceInfo *extractBacktraceInfo(NSString *line) {
-    BacktraceInfo *bti = nil;
-
-    NSArray *array = [line captureComponentsMatchedByRegex:@"^(\\d+)\\s+.*\\S\\s+0x([0-9a-f]+) 0x([0-9a-f]+) \\+ (?:0x)?\\d+"];
-    if ([array count] == 4) {
-        NSString *matches[] = {[array objectAtIndex:1], [array objectAtIndex:2], [array objectAtIndex:3]};
-        bti = [[BacktraceInfo alloc] init];
-        bti->depth = [matches[0] intValue];
-        bti->address = uint64FromHexString(matches[1]);
-        bti->imageAddress = uint64FromHexString(matches[2]);
-    }
-
-    return [bti autorelease];
-}
-
+#if 0
 NSString *symbolicate(NSString *content, NSDictionary *symbolMaps, unsigned progressStepping, NSArray **blameInfo) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
@@ -371,5 +351,410 @@ NSArray *blame(NSString *exceptionType, NSDictionary *binaryImages, NSArray *bac
 
     return result;
 }
+#endif
+
+static uint64_t uint64FromHexString(NSString *string) {
+    return (uint64_t)unsignedLongLongFromHexString([string UTF8String], [string length]);
+}
+
+@interface CrashReport ()
+@property(nonatomic, retain) NSDictionary *properties;
+@property(nonatomic, retain) NSArray *processInfo;
+@property(nonatomic, retain) CRException *exception;
+@property(nonatomic, retain) NSArray *threads;
+@property(nonatomic, retain) NSArray *registerState;
+@property(nonatomic, retain) NSDictionary *binaryImages;
+@property(nonatomic, assign) BOOL isPropertyList;
+@end
+
+@implementation CrashReport
+
+@synthesize properties = properties_;
+@synthesize processInfo = processInfo_;
+@synthesize registerState = registerState_;
+@synthesize exception = exception_;
+@synthesize threads = threads_;
+@synthesize binaryImages = binaryImages_;
+
++ (CrashReport *)crashReportWithData:(NSData *)data {
+    return [[[self alloc] initWithData:data] autorelease];
+}
+
++ (CrashReport *)crashReportWithFile:(NSString *)filepath {
+    return [[[self alloc] initWithFile:filepath] autorelease];
+}
+
+- (id)initWithData:(NSData *)data {
+    self = [super init];
+    if (self != nil) {
+        // Attempt to load data as a property list.
+        id plist = nil;
+        if (kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_4_0) {
+            plist = [NSPropertyListSerialization propertyListFromData:data mutabilityOption:0 format:NULL errorDescription:NULL];
+        } else {
+            plist = [NSPropertyListSerialization propertyListWithData:data options:0 format:NULL error:NULL];
+        }
+
+        if (plist != nil) {
+            // Confirm that input file is a crash log.
+            if ([plist isKindOfClass:[NSDictionary class]] && [plist objectForKey:@"SysInfoCrashReporterKey"] != nil) {
+                properties_ = [plist retain];
+            } else {
+                fprintf(stderr, "ERROR: Input file is not a valid PLIST crash report.\n");
+                [self release];
+                return nil;
+            }
+        } else {
+            // Assume file is of IPS format.
+            if (NSClassFromString(@"NSJSONSerialization") == nil) {
+                fprintf(stderr, "ERROR: This version of iOS does not include NSJSONSerialization, which is required for parsing IPS files.\n");
+                [self release];
+                return nil;
+            }
+
+            NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+            NSRange range = [string rangeOfCharacterFromSet:[NSCharacterSet newlineCharacterSet]];
+            if ((range.location != NSNotFound) && ((range.location + 1) < [string length])) {
+                NSString *header = [string substringToIndex:range.location];
+                NSString *description = [string substringFromIndex:(range.location + 1)];
+                NSError *error = nil;
+                id object = [NSJSONSerialization JSONObjectWithData:[header dataUsingEncoding:NSUTF8StringEncoding] options:0 error:&error];
+                if (object != nil) {
+                    if ([object isKindOfClass:[NSDictionary class]]) {
+                        NSMutableDictionary *dict = [[NSMutableDictionary alloc] initWithDictionary:object];
+                        [dict setObject:description forKey:kCrashReportDescription];
+                        properties_ = dict;
+                    } else {
+                        fprintf(stderr, "ERROR: IPS header is not correct format.\n");
+                        [self release];
+                        return nil;
+                    }
+                } else {
+                    fprintf(stderr, "ERROR: Unable to parse IPS file header: %s.\n", [[error localizedDescription] UTF8String]);
+                    [self release];
+                    return nil;
+                }
+            } else {
+                fprintf(stderr, "ERROR: Input file is not a valid IPS crash report.\n");
+                [self release];
+                return nil;
+            }
+        }
+
+        [self parse];
+    }
+    return self;
+}
+
+- (id)initWithFile:(NSString *)filepath {
+    NSError *error = nil;
+    NSData *data = [[NSData alloc] initWithContentsOfFile:filepath options:0 error:&error];
+    if (data != nil) {
+        return [self initWithData:[data autorelease]];
+    } else {
+        fprintf(stderr, "ERROR: Unable to load data from specified file: \"%s\".\n", [[error localizedDescription] UTF8String]);
+        [self release];
+        return nil;
+    }
+}
+
+- (void)dealloc {
+    [processInfo_ release];
+    [registerState_ release];
+    [exception_ release];
+    [threads_ release];
+    [binaryImages_ release];
+    [super dealloc];
+}
+
+- (NSString *)description {
+    NSMutableString *description = [NSMutableString new];
+
+    [description appendString:[[self processInfo] componentsJoinedByString:@"\n"]];
+    [description appendString:@"\n"];
+
+    NSDictionary *binaryImages = [self binaryImages];
+    NSArray *threads = [self threads];
+    NSUInteger count = [threads count];
+    for (NSUInteger i = 0; i < count; ++i) {
+        CRThread *thread = [threads objectAtIndex:i];
+
+        // Add thread title.
+        NSString *name = [thread name];
+        if (name != nil) {
+            NSString *string = [[NSString alloc] initWithFormat:@"Thread %d name:  %@", i, name];
+            [description appendString:string];
+            [description appendString:@"\n"];
+            [string release];
+        }
+        NSMutableString *string = [[NSMutableString alloc] initWithFormat:@"Thread %d", i];
+        if ([thread crashed]) {
+            [string appendString:@" Crashed"];
+        }
+        [string appendString:@":"];
+        [description appendString:string];
+        [description appendString:@"\n"];
+        [string release];
+
+        // Add stack frames of backtrace.
+        for (CRStackFrame *stackFrame in [thread stackFrames]) {
+            uint64_t address = [stackFrame address];
+            uint64_t imageAddress = [stackFrame imageAddress];
+            NSString *addressString = [[NSString alloc] initWithFormat:@"0x%08llx 0x%08llx + 0x%llx",
+                        address, imageAddress, address - imageAddress];
+
+            NSNumber *key = [NSNumber numberWithUnsignedLongLong:imageAddress];
+            BinaryInfo *bi = [binaryImages objectForKey:key];
+            NSString *binaryName = (bi == nil) ?
+                @"???" :
+                [[[bi path] lastPathComponent] stringByAppendingString:([bi isExecutable] ? @" (*)" : @"")];
+
+            NSString *string = [[NSString alloc] initWithFormat:@"%-6u%s%-30s\t%-32s%@",
+                        stackFrame.depth, [bi isBlamable] ? "+ " : "  ", [binaryName UTF8String],
+                        [addressString UTF8String], @""]; // lineComment ?: @""];
+            [description appendString:string];
+            [description appendString:@"\n"];
+            [string release];
+            [addressString release];
+        }
+        [description appendString:@"\n"];
+    }
+
+    [description appendString:[[self registerState] componentsJoinedByString:@"\n"]];
+    [description appendString:@"\n"];
+    [description appendString:@"\n"];
+
+    [description appendString:@"Binary Images:\n"];
+
+    NSArray *imageAddresses = [[binaryImages allKeys] sortedArrayUsingSelector:@selector(compare:)];
+    for (NSString *key in imageAddresses) {
+        BinaryInfo *bi = [binaryImages objectForKey:key];
+        uint64_t imageAddress = [bi address];
+        NSString *string = [[NSString alloc] initWithFormat:@"0x%08llx - 0x%08llx %@ %@  %@ %@",
+            imageAddress, imageAddress + [bi size], [[bi path] lastPathComponent], [bi architecture], [bi uuid], [bi path]];
+        [description appendString:string];
+        [description appendString:@"\n"];
+        [string release];
+    }
+
+    return [description autorelease];
+}
+
+- (void)parse {
+    NSString *description = [self.properties objectForKey:kCrashReportDescription];
+    if (description != nil) {
+        // Create variables to store parsed information.
+        NSMutableArray *processInfo = [NSMutableArray new];
+        CRException *exception = [CRException new];
+        NSMutableArray *threads = [NSMutableArray new];
+        NSMutableArray *registerState = [NSMutableArray new];
+        NSMutableDictionary *binaryImages = [NSMutableDictionary new];
+        CRThread *thread = nil;
+        NSString *threadName = nil;
+
+        // NOTE: The description is handled as five separate sections.
+        typedef enum {
+            ModeProcessInfo,
+            ModeException,
+            ModeThread,
+            ModeRegisterState,
+            ModeBinaryImage,
+        } SymbolicationMode;
+
+        SymbolicationMode mode = ModeProcessInfo;
+
+        // Process one line at a time.
+        NSArray *inputLines = [[description stringByReplacingOccurrencesOfString:@"\r" withString:@""] componentsSeparatedByString:@"\n"];
+        for (NSString *line in inputLines) {
+            switch (mode) {
+                case ModeProcessInfo:
+                    if ([line hasPrefix:@"Exception Type:"]) {
+                        NSUInteger lastCloseParenthesis = [line rangeOfString:@")" options:NSBackwardsSearch].location;
+                        if (lastCloseParenthesis != NSNotFound) {
+                            NSRange range = NSMakeRange(0, lastCloseParenthesis);
+                            NSUInteger lastOpenParenthesis = [line rangeOfString:@"(" options:NSBackwardsSearch range:range].location;
+                            if (lastOpenParenthesis < lastCloseParenthesis) {
+                                range = NSMakeRange(lastOpenParenthesis + 1, lastCloseParenthesis - lastOpenParenthesis - 1);
+                                [exception setType:[line substringWithRange:range]];
+                            }
+                        }
+                        [processInfo addObject:line];
+                        break;
+                    } else if ([line hasPrefix:@"Last Exception Backtrace:"]) {
+                        mode = ModeException;
+                        break;
+                    } else if (![line hasPrefix:@"Thread 0"]) {
+                        [processInfo addObject:line];
+                        break;
+                    } else {
+                        // Start of thread 0; fall-through to next case.
+                        mode = ModeThread;
+                    }
+
+                case ModeThread:
+                    if ([line rangeOfString:@"Thread State"].location != NSNotFound) {
+                        [registerState addObject:line];
+                        mode = ModeRegisterState;
+                    } else if ([line length] > 0) {
+                        NSRange range = [line rangeOfString:@" name:"];
+                        if (range.location != NSNotFound) {
+                            threadName = [line substringFromIndex:(range.location + range.length + 2)];
+                        } else if ([line hasSuffix:@":"]) {
+                            if (thread != nil) {
+                                [threads addObject:thread];
+                                [thread release];
+                            }
+                            thread = [CRThread new];
+                            if (threadName != nil) {
+                                [thread setName:threadName];
+                                threadName = nil;
+                            }
+                            [thread setCrashed:([line rangeOfString:@"Crashed"].location != NSNotFound)];
+                        } else {
+                            CRStackFrame *stackFrame = nil;
+                            NSArray *array = [line captureComponentsMatchedByRegex:@"^(\\d+)\\s+.*\\S\\s+(?:0x)?([0-9a-f]+) (?:0x)?([0-9a-f]+) \\+ (?:0x)?\\d+"];
+                            if ([array count] == 4) {
+                                NSString *matches[] = {[array objectAtIndex:1], [array objectAtIndex:2], [array objectAtIndex:3]};
+                                stackFrame = [CRStackFrame new];
+                                stackFrame.depth = [matches[0] intValue];
+                                stackFrame.address = uint64FromHexString(matches[1]);
+                                stackFrame.imageAddress = uint64FromHexString(matches[2]);
+                                [thread addStackFrame:stackFrame];
+                                [stackFrame release];
+                            }
+                        }
+                    }
+                    break;
+
+                case ModeException: {
+                    mode = ModeProcessInfo;
+
+                    NSUInteger lastCloseParenthesis = [line rangeOfString:@")" options:NSBackwardsSearch].location;
+                    if (lastCloseParenthesis != NSNotFound) {
+                        NSRange range = NSMakeRange(0, lastCloseParenthesis);
+                        NSUInteger firstOpenParenthesis = [line rangeOfString:@"(" options:0 range:range].location;
+                        if (firstOpenParenthesis < lastCloseParenthesis) {
+                            NSUInteger depth = 0;
+                            range = NSMakeRange(firstOpenParenthesis + 1, lastCloseParenthesis - firstOpenParenthesis - 1);
+                            NSArray *array = [[line substringWithRange:range] componentsSeparatedByString:@" "];
+                            for (NSString *address in array) {
+                                CRStackFrame *stackFrame = [CRStackFrame new];
+                                stackFrame.depth = depth;
+                                stackFrame.address = uint64FromHexString(address);
+                                //stackFrame.imageAddress = 0;
+                                [exception addStackFrame:stackFrame];
+                                [stackFrame release];
+                                ++depth;
+                            }
+                            continue;
+                        }
+                    }
+                    break;
+                }
+
+                case ModeRegisterState:
+                    if ([line isEqualToString:@"Binary Images:"]) {
+                        mode = ModeBinaryImage;
+                    } else if ([line length] > 0) {
+                        [registerState addObject:line];
+                    }
+                    break;
+
+                case ModeBinaryImage: {
+                    NSArray *array = [line captureComponentsMatchedByRegex:@"^ *0x([0-9a-f]+) - *0x([0-9a-f]+) [ +]?(?:.+?) (arm\\w*)  (<[0-9a-f]{32}> )?(.+)$"];
+                    NSUInteger count = [array count];
+                    if (count == 5 || count == 6) {
+                        uint64_t imageAddress = uint64FromHexString([array objectAtIndex:1]);
+                        uint64_t size = imageAddress - uint64FromHexString([array objectAtIndex:2]);
+                        BinaryInfo *bi = [[BinaryInfo alloc] initWithPath:[array objectAtIndex:(count - 1)] address:imageAddress];
+                        [bi setArchitecture:[array objectAtIndex:3]];
+                        [bi setSize:size];
+                        if (count == 6) {
+                            [bi setUuid:[array objectAtIndex:(count - 2)]];
+                        }
+                        [bi setBlamable:YES];
+                        [binaryImages setObject:bi forKey:[NSNumber numberWithUnsignedLongLong:imageAddress]];
+                        [bi release];
+                    }
+                    break;
+                }
+            }
+        }
+
+        [self setProcessInfo:processInfo];
+        [self setException:exception];
+        [self setThreads:threads];
+        [self setRegisterState:registerState];
+        [self setBinaryImages:binaryImages];
+        [processInfo release];
+        [exception release];
+        [threads release];
+        [registerState release];
+        [binaryImages release];
+    }
+}
+
+- (NSString *)report {
+    return [self report:[self isPropertyList]];
+}
+
+- (NSString *)report:(BOOL)asPropertyList {
+    NSString *report = nil;
+
+    NSDictionary *properties = [self properties];
+    if (asPropertyList) {
+        // Generate property list string.
+        NSError *error = nil;
+        NSData *data = [NSPropertyListSerialization dataWithPropertyList:properties format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
+        if (data != nil) {
+            report = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        } else {
+            fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
+        }
+    } else {
+        // Generate IPS string.
+        NSString *description = [properties objectForKey:kCrashReportDescription];
+        NSMutableDictionary *header = [[NSMutableDictionary alloc] initWithDictionary:properties];
+        [header removeObjectForKey:kCrashReportDescription];
+
+        NSError *error = nil;
+        NSData *data = [NSJSONSerialization dataWithJSONObject:header options:0 error:&error];
+        if (data != nil) {
+            NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+            report = [[NSString alloc] initWithFormat:@"%@\n%@", string, description];
+            [string release];
+        } else {
+            fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
+        }
+    }
+
+    return [report autorelease];
+}
+
+- (BOOL)writeToFile:(NSString *)filepath forcePropertyList:(BOOL)forcePropertyList {
+    BOOL succeeded = NO;
+
+    NSString *report = [self report:([self isPropertyList] || forcePropertyList)];
+    if (report != nil) {
+        if (filepath != nil) {
+            // Write to file.
+            NSError *error = nil;
+            if ([report writeToFile:filepath atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
+                fprintf(stderr, "INFO: Result written to %s.\n", [filepath UTF8String]);
+                succeeded = YES;
+            } else {
+                fprintf(stderr, "ERROR: Unable to write to file: %s.\n", [[error localizedDescription] UTF8String]);
+            }
+        } else {
+            // Print to screen.
+            printf("%s\n", [report UTF8String]);
+            succeeded = YES;
+        }
+    }
+
+    return succeeded;
+}
+
+@end
 
 /* vim: set ft=objcpp ff=unix sw=4 ts=4 tw=80 expandtab: */

@@ -79,80 +79,50 @@ int main(int argc, char *argv[]) {
         if (inputFile == NULL) {
             print_usage();
         } else {
-            NSString *filepath = [NSString stringWithUTF8String:inputFile];
-            NSError *error = nil;
-            NSData *data = [[NSData alloc] initWithContentsOfFile:filepath options:0 error:&error];
-            if (data != nil) {
-                NSString *content = nil;
+            // Parse the log file.
+            NSString *inputFileString = [[NSString alloc] initWithUTF8String:inputFile];
+            CrashReport *report = [CrashReport crashReportWithFile:inputFileString];
+            [inputFileString release];
 
-                // Attempt to load data as a property list.
-                id plist = nil;
-                if (kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_4_0) {
-                    plist = [NSPropertyListSerialization propertyListFromData:data mutabilityOption:0 format:NULL errorDescription:NULL];
+            // Parse map files (optional).
+            NSMutableDictionary *symbolMaps = [NSMutableDictionary dictionary];
+            for (NSString *imagePath in mapFiles) {
+                NSString *mapFile = [mapFiles objectForKey:imagePath];
+                NSDictionary *result = parseMapFile(mapFile);
+                if (result != nil) {
+                    [symbolMaps setObject:result forKey:imagePath];
                 } else {
-                    plist = [NSPropertyListSerialization propertyListWithData:data options:0 format:NULL error:NULL];
+                    fprintf(stderr, "WARNING: Unable to read map file \"%s\".\n", [mapFile UTF8String]);
                 }
-                [data release];
-
-                // Confirm that input file is a crash log.
-                if ([plist isKindOfClass:[NSDictionary class]] && [plist objectForKey:@"SysInfoCrashReporterKey"] != nil) {
-                    content = [plist objectForKey:@"description"];
-                } else {
-                    fprintf(stderr, "ERROR: Input file is not a valid crash report.\n");
-                }
-
-                if (content != nil) {
-                    // Parse map files.
-                    NSMutableDictionary *symbolMaps = [NSMutableDictionary dictionary];
-                    for (NSString *imagePath in mapFiles) {
-                        NSString *mapFile = [mapFiles objectForKey:imagePath];
-                        NSDictionary *result = parseMapFile(mapFile);
-                        if (result != nil) {
-                            [symbolMaps setObject:result forKey:imagePath];
-                        } else {
-                            fprintf(stderr, "WARNING: Unable to read map file \"%s\".\n", [mapFile UTF8String]);
-                        }
-                    }
-
-                    // Symbolicate input file.
-                    NSArray *blame = nil;
-                    NSString *result = symbolicate(content, symbolMaps, progressStepping, &blame);
-                    if (result != nil) {
-                        // Update the property list.
-                        NSMutableDictionary *newPlist = [plist mutableCopy];
-                        [newPlist setObject:result forKey:@"description"];
-
-                        // Update blame info.
-                        [newPlist setObject:blame forKey:@"blame"];
-
-                        // Mark that this file has been symbolicated.
-                        [newPlist setObject:[NSNumber numberWithBool:YES] forKey:@"symbolicated"];
-
-                        // Convert back to a data object.
-                        NSError *error = nil;
-                        NSData *data = [NSPropertyListSerialization dataWithPropertyList:newPlist format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
-                        [newPlist release];
-                        if (data != nil) {
-                            if (outputFile != NULL) {
-                                // Write to file.
-                                NSString *path = [NSString stringWithUTF8String:outputFile];
-                                [data writeToFile:path atomically:YES];
-                                printf("Result written to %s.\n", outputFile);
-                            } else {
-                                // Print to screen.
-                                NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-                                printf("%s\n", [string UTF8String]);
-                                [string release];
-                            }
-                            ret = 0;
-                        } else {
-                            fprintf(stderr, "ERROR: Unable to convert new plist to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
-                        }
-                    }
-                }
-            } else {
-                fprintf(stderr, "ERROR: Unable to load data from specified file: \"%s\".\n", [[error localizedDescription] UTF8String]);
             }
+
+#if 0
+            // Symbolicate threads in the report.
+            NSArray *blame = nil;
+            NSString *result = symbolicate(description, symbolMaps, progressStepping, &blame);
+            if (result != nil) {
+                // Update the property list.
+                NSMutableDictionary *newPlist = [plist mutableCopy];
+                [newPlist setObject:result forKey:@"description"];
+
+                // Update blame info.
+                [newPlist setObject:blame forKey:@"blame"];
+
+                // Mark that this file has been symbolicated.
+                [newPlist setObject:[NSNumber numberWithBool:YES] forKey:@"symbolicated"];
+
+                // Output the log file.
+                NSString *filepath = (outputFile != NULL) ? [NSString stringWithUTF8String:outputFile] : nil;
+                if (writeLogFile(newPlist, filepath, NO)) {
+                    ret = 0;
+                }
+            }
+#endif
+
+            // Write out the log file.
+            NSString *filepath = (outputFile != NULL) ? [[NSString alloc] initWithUTF8String:outputFile] : nil;
+            [report writeToFile:filepath forcePropertyList:NO];
+            [filepath release];
         }
     }
 
