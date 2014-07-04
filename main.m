@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
         print_usage();
     } else {
         const char *outputFile = NULL;
-        NSMutableDictionary *mapFiles = [NSMutableDictionary dictionary];
+        NSMutableDictionary *mapFiles = [NSMutableDictionary new];
         unsigned progressStepping = 0;
 
         int c;
@@ -85,7 +85,7 @@ int main(int argc, char *argv[]) {
             [inputFileString release];
 
             // Parse map files (optional).
-            NSMutableDictionary *symbolMaps = [NSMutableDictionary dictionary];
+            NSMutableDictionary *symbolMaps = [NSMutableDictionary new];
             for (NSString *imagePath in mapFiles) {
                 NSString *mapFile = [mapFiles objectForKey:imagePath];
                 NSDictionary *result = parseMapFile(mapFile);
@@ -95,9 +95,11 @@ int main(int argc, char *argv[]) {
                     fprintf(stderr, "WARNING: Unable to read map file \"%s\".\n", [mapFile UTF8String]);
                 }
             }
+            [mapFiles release];
 
             // Symbolicate threads in the report.
             [report symbolicateUsingSymbolMaps:symbolMaps];
+            [symbolMaps release];
 
 #if 0
             NSArray *blame = nil;
