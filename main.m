@@ -101,27 +101,12 @@ int main(int argc, char *argv[]) {
             [report symbolicateUsingSymbolMaps:symbolMaps];
             [symbolMaps release];
 
-#if 0
-            NSArray *blame = nil;
-            NSString *result = symbolicate(description, symbolMaps, progressStepping, &blame);
-            if (result != nil) {
-                // Update the property list.
-                NSMutableDictionary *newPlist = [plist mutableCopy];
-                [newPlist setObject:result forKey:@"description"];
+            // Load blame filters.
+            NSDictionary *filters = [[NSDictionary alloc] initWithContentsOfFile:@"/etc/symbolicate/whitelist.plist"];
 
-                // Update blame info.
-                [newPlist setObject:blame forKey:@"blame"];
-
-                // Mark that this file has been symbolicated.
-                [newPlist setObject:[NSNumber numberWithBool:YES] forKey:@"symbolicated"];
-
-                // Output the log file.
-                NSString *filepath = (outputFile != NULL) ? [NSString stringWithUTF8String:outputFile] : nil;
-                if (writeLogFile(newPlist, filepath, NO)) {
-                    ret = 0;
-                }
-            }
-#endif
+            // Process blame.
+            [report blameUsingFilters:filters];
+            [filters release];
 
             // Write out the log file.
             NSString *filepath = (outputFile != NULL) ? [[NSString alloc] initWithUTF8String:outputFile] : nil;

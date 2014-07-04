@@ -1,5 +1,5 @@
 {
-	Filters = (
+	BinaryFilters = (
 		"/Applications/AppStore.app/AppStore",
 		"/Applications/Calculator.app/Calculator",
 		"/Applications/DemoApp.app/DemoApp",
@@ -21,6 +21,8 @@
 		"/Applications/YouTube.app/YouTube",
 		"/Library/MobileSubstrate/MobileSafety.dylib",
 		"/Library/MobileSubstrate/MobileSubstrate.dylib",
+		"/Library/MobileSubstrate/DynamicLibraries/CydgetLoader.dylib",
+		"/usr/lib/dyld",
 		"/usr/lib/libAccessibility.dylib",
 		"/usr/lib/libafc.dylib",
 		"/usr/lib/libbsm.0.dylib",
@@ -57,12 +59,17 @@
 		"/usr/lib/libutil1.0.dylib",
 		"/usr/lib/libxml2.2.dylib",
 		"/usr/lib/libxslt.1.dylib",
+		"/usr/lib/system/libkeymgr.dylib",
 		"/usr/lib/libz.1.2.3.dylib",
 		"/usr/lib/libz.1.dylib",
 		"/usr/lib/system/libkxld.dylib",
 		"/usr/lib/libcycript.dylib",
 		"/usr/lib/libffi.dylib",
-		"/Library/MobileSubstrate/DynamicLibraries/CydgetLoader.dylib",
+	);
+	ExceptionFilters = (
+		SIGQUIT,
+		SIGEMT,
+		SIGTRAP,
 	);
 	FunctionFilters = (
 		"mach_msg_trap",
@@ -81,12 +88,7 @@
 		"/System/Library/PrivateFrameworks",
 		"/System/Library/TextInput",
 	);
-	"ReverseFunctionFilters" = (
+	ReverseFunctionFilters = (
 		"__kill",
-	);
-	SignalFilters = (
-		SIGQUIT,
-		SIGEMT,
-		SIGTRAP,
 	);
 }

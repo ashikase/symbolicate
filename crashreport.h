@@ -18,6 +18,8 @@ extern "C" {
 + (CrashReport *)crashReportWithFile:(NSString *)filepath;
 - (id)initWithData:(NSData *)data;
 - (id)initWithFile:(NSString *)filepath;
+- (void)blame;
+- (void)blameUsingFilters:(NSDictionary *)filters;
 - (NSString *)stringRepresentation;
 - (NSString *)stringRepresentation:(BOOL)asPropertyList;
 - (void)symbolicate;

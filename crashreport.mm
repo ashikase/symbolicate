@@ -11,125 +11,8 @@
 #include <notify.h>
 #include "common.h"
 
+static NSString * const kCrashReportBlame = @"blame";
 static NSString * const kCrashReportDescription = @"description";
-
-#if 0
-NSArray *blame(NSString *exceptionType, NSDictionary *binaryImages, NSArray *backtraceLines) {
-    NSMutableArray *result = nil;
-
-    // Load blame filters.
-    NSDictionary *whiteListFile = [[NSDictionary alloc] initWithContentsOfFile:@"/etc/symbolicate/whitelist.plist"];
-    NSSet *filters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"Filters"]];
-    NSSet *functionFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"FunctionFilters"]];
-    NSSet *prefixFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"PrefixFilters"]];
-    NSSet *reverseFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"ReverseFunctionFilters"]];
-    NSSet *signalFilters = [[NSSet alloc] initWithArray:[whiteListFile objectForKey:@"SignalFilters"]];
-    [whiteListFile release];
-
-    // If exception type is not whitelisted, process blame.
-    if (![signalFilters containsObject:exceptionType]) {
-        // Mark which binary images are unblamable.
-        Class $BinaryInfo = [BinaryInfo class];
-        BOOL hasHeaderFromSharedCacheWithPath = [VMUMemory_File respondsToSelector:@selector(headerFromSharedCacheWithPath:)];
-        for (BinaryInfo *bi in binaryImages) {
-            if ([bi isKindOfClass:$BinaryInfo]) {
-                // Determine if binary image should not be blamed.
-                BOOL blamable = YES;
-                if (hasHeaderFromSharedCacheWithPath && [[bi header] isFromSharedCache]) {
-                    // Don't blame anything from the shared cache.
-                    blamable = NO;
-                } else {
-                    // Don't blame white-listed libraries.
-                    NSString *path = [bi path];
-                    if ([filters containsObject:path]) {
-                        blamable = NO;
-                    } else {
-                        // Don't blame white-listed folders.
-                        for (NSString *prefix in prefixFilters) {
-                            if ([path hasPrefix:prefix]) {
-                                blamable = NO;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (!blamable) {
-                    [bi setBlamable:NO];
-                }
-            }
-        }
-
-        NSUInteger i = 0;
-        BOOL isCrashing = NO;
-        for (BacktraceInfo *bti in backtraceLines) {
-            if (bti == (id)kCFBooleanTrue) {
-                isCrashing = YES;
-            } else if (bti == (id)kCFBooleanFalse) {
-                isCrashing = NO;
-            } else if (bti != (id)kCFNull) {
-                // Retrieve info for related binary image.
-                NSNumber *imageAddress = [NSNumber numberWithUnsignedLongLong:bti->imageAddress];
-                BinaryInfo *bi = [binaryImages objectForKey:imageAddress];
-                if (bi != nil) {
-                    // Determine if binary image should be blamed.
-                    NSInteger line = [bi line];
-                    if ([bi isBlamable] && (line == 0 || ((line & 0x80000000) && isCrashing))) {
-                        // Blame.
-                        line = i;
-                        // Make it a secondary suspect if it isn't in the crashing thread.
-                        if (!isCrashing) {
-                            line |= 0x80000000;
-                        }
-                        [bi setLine:line];
-                    }
-
-                    // Check symbol name of system functions against blame filters.
-                    if ([[bi path] isEqualToString:@"/usr/lib/libSystem.B.dylib"]) {
-                        SymbolInfo *symbolInfo = [bti symbolInfo];
-                        if (symbolInfo != nil) {
-                            NSString *name = [symbolInfo name];
-                            if (name != nil) {
-                                if (isCrashing) {
-                                    // Check if this function should never cause crash (only hang).
-                                    if ([functionFilters containsObject:name]) {
-                                        isCrashing = NO;
-                                    }
-                                } else {
-                                    // Check if this function is actually causing crash.
-                                    if ([reverseFilters containsObject:name]) {
-                                        isCrashing = YES;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            ++i;
-        }
-
-        // Output blame info.
-        result = [NSMutableArray array];
-        for (NSNumber *key in binaryImages) {
-            BinaryInfo *bi = [binaryImages objectForKey:key];
-            if ([bi isKindOfClass:$BinaryInfo] && [bi isBlamable]) {
-                NSArray *array = [[NSArray alloc] initWithObjects:[bi path], [NSNumber numberWithUnsignedInteger:[bi line]], nil];
-                [result addObject:array];
-                [array release];
-            }
-        }
-    }
-
-    [filters release];
-    [functionFilters release];
-    [prefixFilters release];
-    [reverseFilters release];
-    [signalFilters release];
-
-    return result;
-}
-#endif
 
 static uint64_t uint64FromHexString(NSString *string) {
     return (uint64_t)unsignedLongLongFromHexString([string UTF8String], [string length]);
@@ -249,6 +132,131 @@ static uint64_t uint64FromHexString(NSString *string) {
 }
 
 #pragma mark - Public API (General)
+
+- (void)blame {
+    [self blameUsingFilters:nil];
+}
+
+- (void)blameUsingFilters:(NSDictionary *)filters {
+    // Load blame filters.
+    NSSet *binaryFilters = [[NSSet alloc] initWithArray:[filters objectForKey:@"BinaryFilters"]];
+    NSSet *exceptionFilters = [[NSSet alloc] initWithArray:[filters objectForKey:@"ExceptionFilters"]];
+    NSSet *functionFilters = [[NSSet alloc] initWithArray:[filters objectForKey:@"FunctionFilters"]];
+    NSSet *prefixFilters = [[NSSet alloc] initWithArray:[filters objectForKey:@"PrefixFilters"]];
+    NSSet *reverseFilters = [[NSSet alloc] initWithArray:[filters objectForKey:@"ReverseFunctionFilters"]];
+
+    NSDictionary *binaryImages = [self binaryImages];
+
+    // If exception type is not white-listed, process blame.
+    CRException *exception = [self exception];
+    if (![exceptionFilters containsObject:[exception type]]) {
+        // Mark which binary images are unblamable.
+        BOOL hasHeaderFromSharedCacheWithPath = [VMUMemory_File respondsToSelector:@selector(headerFromSharedCacheWithPath:)];
+        for (NSNumber *key in binaryImages) {
+            BinaryInfo *bi = [binaryImages objectForKey:key];
+
+            // Determine if binary image should not be blamed.
+            BOOL blamable = YES;
+            if (hasHeaderFromSharedCacheWithPath && [[bi header] isFromSharedCache]) {
+                // Don't blame anything from the shared cache.
+                blamable = NO;
+            } else {
+                // Don't blame white-listed binaries (e.g. libraries).
+                NSString *path = [bi path];
+                if ([binaryFilters containsObject:path]) {
+                    blamable = NO;
+                } else {
+                    // Don't blame white-listed folders.
+                    for (NSString *prefix in prefixFilters) {
+                        if ([path hasPrefix:prefix]) {
+                            blamable = NO;
+                            break;
+                        }
+                    }
+                }
+            }
+            [bi setBlamable:blamable];
+        }
+
+        // Update the description to reflect any changes in blamability.
+        [self updateDescription];
+
+        // Retrieve the thread that crashed
+        CRThread *crashedThread = nil;
+        for (CRThread *thread in [self threads]) {
+            if ([thread crashed]) {
+                crashedThread = thread;
+                break;
+            }
+        }
+
+        // Determine blame.
+        NSMutableArray *blame = [NSMutableArray new];
+
+        // NOTE: We first look at any exception backtrace, and then the
+        //       backtrace of the thread that crashed.
+        NSMutableArray *backtraces = [NSMutableArray new];
+        NSArray *stackFrames = [[self exception] stackFrames];
+        if (stackFrames != nil) {
+            [backtraces addObject:stackFrames];
+        }
+        stackFrames = [crashedThread stackFrames];
+        if (stackFrames != nil) {
+            [backtraces addObject:stackFrames];
+        }
+        for (NSArray *stackFrames in backtraces) {
+            for (CRStackFrame *stackFrame in stackFrames) {
+                // Retrieve info for related binary image.
+                NSNumber *imageAddress = [NSNumber numberWithUnsignedLongLong:[stackFrame imageAddress]];
+                BinaryInfo *bi = [binaryImages objectForKey:imageAddress];
+                if (bi != nil) {
+                    // Check symbol name of system functions against blame filters.
+                    BOOL blamable = [bi isBlamable];
+                    NSString *path = [bi path];
+                    if ([path isEqualToString:@"/usr/lib/libSystem.B.dylib"]) {
+                        SymbolInfo *symbolInfo = [stackFrame symbolInfo];
+                        if (symbolInfo != nil) {
+                            NSString *name = [symbolInfo name];
+                            if (name != nil) {
+                                if (blamable) {
+                                    // Check if this function should never cause crash (only hang).
+                                    if ([functionFilters containsObject:name]) {
+                                        blamable = NO;
+                                    }
+                                } else {
+                                    // Check if this function is actually causing crash.
+                                    if ([reverseFilters containsObject:name]) {
+                                        blamable = YES;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Determine if binary image should be blamed.
+                    if (blamable) {
+                        if (![blame containsObject:path]) {
+                            [blame addObject:path];
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update the property dictionary.
+        NSMutableDictionary *properties = [[NSMutableDictionary alloc] initWithDictionary:[self properties]];
+        [properties setObject:blame forKey:kCrashReportBlame];
+        [blame release];
+        [self setProperties:properties];
+        [properties release];
+    }
+
+    [binaryFilters release];
+    [exceptionFilters release];
+    [functionFilters release];
+    [prefixFilters release];
+    [reverseFilters release];
+}
 
 - (NSString *)stringRepresentation {
     return [self stringRepresentation:[self isPropertyList]];
