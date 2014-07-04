@@ -62,6 +62,7 @@ static uint64_t uint64FromHexString(NSString *string) {
             // Confirm that input file is a crash log.
             if ([plist isKindOfClass:[NSDictionary class]] && [plist objectForKey:@"SysInfoCrashReporterKey"] != nil) {
                 properties_ = [plist retain];
+                [self setIsPropertyList:YES];
             } else {
                 fprintf(stderr, "ERROR: Input file is not a valid PLIST crash report.\n");
                 [self release];
