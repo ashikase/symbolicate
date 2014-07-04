@@ -245,7 +245,7 @@ static uint64_t uint64FromHexString(NSString *string) {
     [super dealloc];
 }
 
-- (NSString *)description {
+- (void)updateDescription {
     NSMutableString *description = [NSMutableString new];
 
     [description appendString:[[self processInfo] componentsJoinedByString:@"\n"]];
@@ -317,12 +317,13 @@ static uint64_t uint64FromHexString(NSString *string) {
         [description appendString:@"\n"];
     }
 
+    // Add register state.
     [description appendString:[[self registerState] componentsJoinedByString:@"\n"]];
     [description appendString:@"\n"];
     [description appendString:@"\n"];
 
+    // Add binary images.
     [description appendString:@"Binary Images:\n"];
-
     NSArray *imageAddresses = [[binaryImages allKeys] sortedArrayUsingSelector:@selector(compare:)];
     for (NSString *key in imageAddresses) {
         BinaryInfo *bi = [binaryImages objectForKey:key];
@@ -334,7 +335,12 @@ static uint64_t uint64FromHexString(NSString *string) {
         [string release];
     }
 
-    return [description autorelease];
+    // Update the property dictionary.
+    NSMutableDictionary *properties = [[NSMutableDictionary alloc] initWithDictionary:[self properties]];
+    [properties setObject:description forKey:kCrashReportDescription];
+    [description release];
+    [self setProperties:properties];
+    [properties release];
 }
 
 - (void)parse {
@@ -525,6 +531,9 @@ static uint64_t uint64FromHexString(NSString *string) {
             [self symbolicateStackFrame:stackFrame usingSymbolMaps:symbolMaps];
         }
     }
+
+    // Update the description in order to include symbol info.
+    [self updateDescription];
 }
 
 - (NSString *)report {
@@ -534,24 +543,21 @@ static uint64_t uint64FromHexString(NSString *string) {
 - (NSString *)report:(BOOL)asPropertyList {
     NSString *report = nil;
 
-    NSDictionary *properties = [self properties];
     if (asPropertyList) {
         // Generate property list string.
         NSError *error = nil;
-        NSMutableDictionary *dict = [[NSMutableDictionary alloc] initWithDictionary:properties];
-        [dict setObject:[self description] forKey:kCrashReportDescription];
-        NSData *data = [NSPropertyListSerialization dataWithPropertyList:dict format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
+        NSData *data = [NSPropertyListSerialization dataWithPropertyList:[self properties] format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
         if (data != nil) {
             report = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
         } else {
             fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
         }
-        [dict release];
     } else {
         // Generate IPS string.
-        NSString *description = [self description];
+        NSDictionary *properties = [self properties];
         NSMutableDictionary *header = [[NSMutableDictionary alloc] initWithDictionary:properties];
         [header removeObjectForKey:kCrashReportDescription];
+        NSString *description = [properties objectForKey:kCrashReportDescription];
 
         NSError *error = nil;
         NSData *data = [NSJSONSerialization dataWithJSONObject:header options:0 error:&error];
