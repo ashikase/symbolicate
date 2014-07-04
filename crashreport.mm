@@ -1,11 +1,11 @@
 #import "crashreport.h"
 
+#import <RegexKitLite/RegexKitLite.h>
 #import "CRException.h"
 #import "CRThread.h"
 #import "CRStackFrame.h"
 
 #import "BinaryInfo.h"
-#import "RegexKitLite.h"
 #import "symbolicate.h"
 #import "SymbolInfo.h"
 #include <notify.h>

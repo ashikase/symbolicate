@@ -1,6 +1,6 @@
 #import "symbolMaps.h"
 
-#import "RegexKitLite.h"
+#import <RegexKitLite/RegexKitLite.h>
 #include "common.h"
 
 // NOTE: It seems that older SDKs (iOS 3.0 and earlier?) do not include bzlib.h.
