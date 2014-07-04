@@ -237,6 +237,7 @@ static uint64_t uint64FromHexString(NSString *string) {
 }
 
 - (void)dealloc {
+    [properties_ release];
     [processInfo_ release];
     [registerState_ release];
     [exception_ release];
