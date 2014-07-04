@@ -154,6 +154,8 @@ static uint64_t uint64FromHexString(NSString *string) {
 @synthesize threads = threads_;
 @synthesize binaryImages = binaryImages_;
 
+#pragma mark - Public API (Creation)
+
 + (CrashReport *)crashReportWithData:(NSData *)data {
     return [[[self alloc] initWithData:data] autorelease];
 }
@@ -246,103 +248,110 @@ static uint64_t uint64FromHexString(NSString *string) {
     [super dealloc];
 }
 
-- (void)updateDescription {
-    NSMutableString *description = [NSMutableString new];
+#pragma mark - Public API (General)
 
-    [description appendString:[[self processInfo] componentsJoinedByString:@"\n"]];
-    [description appendString:@"\n"];
-
-    NSDictionary *binaryImages = [self binaryImages];
-    NSArray *threads = [self threads];
-    NSUInteger count = [threads count];
-    for (NSUInteger i = 0; i < count; ++i) {
-        CRThread *thread = [threads objectAtIndex:i];
-
-        // Add thread title.
-        NSString *name = [thread name];
-        if (name != nil) {
-            NSString *string = [[NSString alloc] initWithFormat:@"Thread %d name:  %@", i, name];
-            [description appendString:string];
-            [description appendString:@"\n"];
-            [string release];
-        }
-        NSMutableString *string = [[NSMutableString alloc] initWithFormat:@"Thread %d", i];
-        if ([thread crashed]) {
-            [string appendString:@" Crashed"];
-        }
-        [string appendString:@":"];
-        [description appendString:string];
-        [description appendString:@"\n"];
-        [string release];
-
-        // Add stack frames of backtrace.
-        for (CRStackFrame *stackFrame in [thread stackFrames]) {
-            uint64_t address = [stackFrame address];
-            uint64_t imageAddress = [stackFrame imageAddress];
-            NSString *addressString = [[NSString alloc] initWithFormat:@"0x%08llx 0x%08llx + 0x%llx",
-                        address, imageAddress, address - imageAddress];
-
-            NSNumber *key = [NSNumber numberWithUnsignedLongLong:imageAddress];
-            BinaryInfo *bi = [binaryImages objectForKey:key];
-            NSString *binaryName = (bi == nil) ?
-                @"???" :
-                [[[bi path] lastPathComponent] stringByAppendingString:([bi isExecutable] ? @" (*)" : @"")];
-
-            NSString *comment = nil;
-            SymbolInfo *symbolInfo = [stackFrame symbolInfo];
-            if (symbolInfo != nil) {
-                NSString *sourcePath = [symbolInfo sourcePath];
-                if (sourcePath != nil) {
-                    comment = [[NSString alloc] initWithFormat:@"\t// %@:%u", sourcePath, [symbolInfo sourceLineNumber]];
-                } else {
-                    NSString *name = [symbolInfo name];
-                    if (name != nil) {
-                        comment = [[NSString alloc] initWithFormat:@"\t// %@ + 0x%llx", name, [symbolInfo offset]];
-                    }
-                }
-
-                [stackFrame setSymbolInfo:symbolInfo];
-                [symbolInfo release];
-            }
-
-            NSString *string = [[NSString alloc] initWithFormat:@"%-6u%s%-30s\t%-32s%@",
-                        [stackFrame depth], [bi isBlamable] ? "+ " : "  ", [binaryName UTF8String],
-                        [addressString UTF8String], comment ?: @""];
-            [addressString release];
-            [comment release];
-
-            [description appendString:string];
-            [description appendString:@"\n"];
-            [string release];
-        }
-        [description appendString:@"\n"];
-    }
-
-    // Add register state.
-    [description appendString:[[self registerState] componentsJoinedByString:@"\n"]];
-    [description appendString:@"\n"];
-    [description appendString:@"\n"];
-
-    // Add binary images.
-    [description appendString:@"Binary Images:\n"];
-    NSArray *imageAddresses = [[binaryImages allKeys] sortedArrayUsingSelector:@selector(compare:)];
-    for (NSString *key in imageAddresses) {
-        BinaryInfo *bi = [binaryImages objectForKey:key];
-        uint64_t imageAddress = [bi address];
-        NSString *string = [[NSString alloc] initWithFormat:@"0x%08llx - 0x%08llx %@ %@  %@ %@",
-            imageAddress, imageAddress + [bi size], [[bi path] lastPathComponent], [bi architecture], [bi uuid], [bi path]];
-        [description appendString:string];
-        [description appendString:@"\n"];
-        [string release];
-    }
-
-    // Update the property dictionary.
-    NSMutableDictionary *properties = [[NSMutableDictionary alloc] initWithDictionary:[self properties]];
-    [properties setObject:description forKey:kCrashReportDescription];
-    [description release];
-    [self setProperties:properties];
-    [properties release];
+- (void)symbolicate {
+    [self symbolicateUsingSymbolMaps:nil];
 }
+
+- (void)symbolicateUsingSymbolMaps:(NSDictionary *)symbolMaps {
+    CRException *exception = [self exception];
+
+    // Prepare array of image start addresses for determining symbols of exception.
+    NSArray *imageAddresses = nil;
+    if ([exception stackFrames] != nil) {
+        imageAddresses = [[[self binaryImages] allKeys] sortedArrayUsingSelector:@selector(compare:)];
+    }
+
+    // Symbolicate the exception (if backtrace exists).
+    for (CRStackFrame *stackFrame in [exception stackFrames]) {
+        // Determine start address for this frame.
+        if ([stackFrame imageAddress] == 0) {
+            for (NSNumber *number in [imageAddresses reverseObjectEnumerator]) {
+                uint64_t imageAddress = [number unsignedLongLongValue];
+                if ([stackFrame address] > imageAddress) {
+                    [stackFrame setImageAddress:imageAddress];
+                    break;
+                }
+            }
+        }
+        [self symbolicateStackFrame:stackFrame usingSymbolMaps:symbolMaps];
+    }
+
+    // Symbolicate the threads.
+    for (CRThread *thread in [self threads]) {
+        for (CRStackFrame *stackFrame in [thread stackFrames]) {
+            [self symbolicateStackFrame:stackFrame usingSymbolMaps:symbolMaps];
+        }
+    }
+
+    // Update the description in order to include symbol info.
+    [self updateDescription];
+}
+
+- (NSString *)report {
+    return [self report:[self isPropertyList]];
+}
+
+- (NSString *)report:(BOOL)asPropertyList {
+    NSString *report = nil;
+
+    if (asPropertyList) {
+        // Generate property list string.
+        NSError *error = nil;
+        NSData *data = [NSPropertyListSerialization dataWithPropertyList:[self properties] format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
+        if (data != nil) {
+            report = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        } else {
+            fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
+        }
+    } else {
+        // Generate IPS string.
+        NSDictionary *properties = [self properties];
+        NSMutableDictionary *header = [[NSMutableDictionary alloc] initWithDictionary:properties];
+        [header removeObjectForKey:kCrashReportDescription];
+        NSString *description = [properties objectForKey:kCrashReportDescription];
+
+        NSError *error = nil;
+        NSData *data = [NSJSONSerialization dataWithJSONObject:header options:0 error:&error];
+        if (data != nil) {
+            NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+            report = [[NSString alloc] initWithFormat:@"%@\n%@", string, description];
+            [string release];
+        } else {
+            fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
+        }
+        [header release];
+    }
+
+    return [report autorelease];
+}
+
+- (BOOL)writeToFile:(NSString *)filepath forcePropertyList:(BOOL)forcePropertyList {
+    BOOL succeeded = NO;
+
+    NSString *report = [self report:([self isPropertyList] || forcePropertyList)];
+    if (report != nil) {
+        if (filepath != nil) {
+            // Write to file.
+            NSError *error = nil;
+            if ([report writeToFile:filepath atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
+                fprintf(stderr, "INFO: Result written to %s.\n", [filepath UTF8String]);
+                succeeded = YES;
+            } else {
+                fprintf(stderr, "ERROR: Unable to write to file: %s.\n", [[error localizedDescription] UTF8String]);
+            }
+        } else {
+            // Print to screen.
+            printf("%s\n", [report UTF8String]);
+            succeeded = YES;
+        }
+    }
+
+    return succeeded;
+}
+
+#pragma mark - Private Methods
 
 - (void)parse {
     NSString *description = [self.properties objectForKey:kCrashReportDescription];
@@ -498,109 +507,6 @@ static uint64_t uint64FromHexString(NSString *string) {
     }
 }
 
-- (void)symbolicate {
-    [self symbolicateUsingSymbolMaps:nil];
-}
-
-- (void)symbolicateUsingSymbolMaps:(NSDictionary *)symbolMaps {
-    CRException *exception = [self exception];
-
-    // Prepare array of image start addresses for determining symbols of exception.
-    NSArray *imageAddresses = nil;
-    if ([exception stackFrames] != nil) {
-        imageAddresses = [[[self binaryImages] allKeys] sortedArrayUsingSelector:@selector(compare:)];
-    }
-
-    // Symbolicate the exception (if backtrace exists).
-    for (CRStackFrame *stackFrame in [exception stackFrames]) {
-        // Determine start address for this frame.
-        if ([stackFrame imageAddress] == 0) {
-            for (NSNumber *number in [imageAddresses reverseObjectEnumerator]) {
-                uint64_t imageAddress = [number unsignedLongLongValue];
-                if ([stackFrame address] > imageAddress) {
-                    [stackFrame setImageAddress:imageAddress];
-                    break;
-                }
-            }
-        }
-        [self symbolicateStackFrame:stackFrame usingSymbolMaps:symbolMaps];
-    }
-
-    // Symbolicate the threads.
-    for (CRThread *thread in [self threads]) {
-        for (CRStackFrame *stackFrame in [thread stackFrames]) {
-            [self symbolicateStackFrame:stackFrame usingSymbolMaps:symbolMaps];
-        }
-    }
-
-    // Update the description in order to include symbol info.
-    [self updateDescription];
-}
-
-- (NSString *)report {
-    return [self report:[self isPropertyList]];
-}
-
-- (NSString *)report:(BOOL)asPropertyList {
-    NSString *report = nil;
-
-    if (asPropertyList) {
-        // Generate property list string.
-        NSError *error = nil;
-        NSData *data = [NSPropertyListSerialization dataWithPropertyList:[self properties] format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
-        if (data != nil) {
-            report = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-        } else {
-            fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
-        }
-    } else {
-        // Generate IPS string.
-        NSDictionary *properties = [self properties];
-        NSMutableDictionary *header = [[NSMutableDictionary alloc] initWithDictionary:properties];
-        [header removeObjectForKey:kCrashReportDescription];
-        NSString *description = [properties objectForKey:kCrashReportDescription];
-
-        NSError *error = nil;
-        NSData *data = [NSJSONSerialization dataWithJSONObject:header options:0 error:&error];
-        if (data != nil) {
-            NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-            report = [[NSString alloc] initWithFormat:@"%@\n%@", string, description];
-            [string release];
-        } else {
-            fprintf(stderr, "ERROR: Unable to convert report to data: \"%s\".\n", [[error localizedDescription] UTF8String]);
-        }
-        [header release];
-    }
-
-    return [report autorelease];
-}
-
-- (BOOL)writeToFile:(NSString *)filepath forcePropertyList:(BOOL)forcePropertyList {
-    BOOL succeeded = NO;
-
-    NSString *report = [self report:([self isPropertyList] || forcePropertyList)];
-    if (report != nil) {
-        if (filepath != nil) {
-            // Write to file.
-            NSError *error = nil;
-            if ([report writeToFile:filepath atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
-                fprintf(stderr, "INFO: Result written to %s.\n", [filepath UTF8String]);
-                succeeded = YES;
-            } else {
-                fprintf(stderr, "ERROR: Unable to write to file: %s.\n", [[error localizedDescription] UTF8String]);
-            }
-        } else {
-            // Print to screen.
-            printf("%s\n", [report UTF8String]);
-            succeeded = YES;
-        }
-    }
-
-    return succeeded;
-}
-
-#pragma mark - Private Methods
-
 - (void)symbolicateStackFrame:(CRStackFrame *)stackFrame usingSymbolMaps:(NSDictionary *)symbolMaps {
     // Retrieve symbol info from related binary image.
     NSNumber *imageAddress = [NSNumber numberWithUnsignedLongLong:[stackFrame imageAddress]];
@@ -610,6 +516,104 @@ static uint64_t uint64FromHexString(NSString *string) {
         SymbolInfo *symbolInfo = fetchSymbolInfo(bi, [stackFrame address], symbolMap);
         [stackFrame setSymbolInfo:symbolInfo];
     }
+}
+
+- (void)updateDescription {
+    NSMutableString *description = [NSMutableString new];
+
+    [description appendString:[[self processInfo] componentsJoinedByString:@"\n"]];
+    [description appendString:@"\n"];
+
+    NSDictionary *binaryImages = [self binaryImages];
+    NSArray *threads = [self threads];
+    NSUInteger count = [threads count];
+    for (NSUInteger i = 0; i < count; ++i) {
+        CRThread *thread = [threads objectAtIndex:i];
+
+        // Add thread title.
+        NSString *name = [thread name];
+        if (name != nil) {
+            NSString *string = [[NSString alloc] initWithFormat:@"Thread %d name:  %@", i, name];
+            [description appendString:string];
+            [description appendString:@"\n"];
+            [string release];
+        }
+        NSMutableString *string = [[NSMutableString alloc] initWithFormat:@"Thread %d", i];
+        if ([thread crashed]) {
+            [string appendString:@" Crashed"];
+        }
+        [string appendString:@":"];
+        [description appendString:string];
+        [description appendString:@"\n"];
+        [string release];
+
+        // Add stack frames of backtrace.
+        for (CRStackFrame *stackFrame in [thread stackFrames]) {
+            uint64_t address = [stackFrame address];
+            uint64_t imageAddress = [stackFrame imageAddress];
+            NSString *addressString = [[NSString alloc] initWithFormat:@"0x%08llx 0x%08llx + 0x%llx",
+                        address, imageAddress, address - imageAddress];
+
+            NSNumber *key = [NSNumber numberWithUnsignedLongLong:imageAddress];
+            BinaryInfo *bi = [binaryImages objectForKey:key];
+            NSString *binaryName = (bi == nil) ?
+                @"???" :
+                [[[bi path] lastPathComponent] stringByAppendingString:([bi isExecutable] ? @" (*)" : @"")];
+
+            NSString *comment = nil;
+            SymbolInfo *symbolInfo = [stackFrame symbolInfo];
+            if (symbolInfo != nil) {
+                NSString *sourcePath = [symbolInfo sourcePath];
+                if (sourcePath != nil) {
+                    comment = [[NSString alloc] initWithFormat:@"\t// %@:%u", sourcePath, [symbolInfo sourceLineNumber]];
+                } else {
+                    NSString *name = [symbolInfo name];
+                    if (name != nil) {
+                        comment = [[NSString alloc] initWithFormat:@"\t// %@ + 0x%llx", name, [symbolInfo offset]];
+                    }
+                }
+
+                [stackFrame setSymbolInfo:symbolInfo];
+                [symbolInfo release];
+            }
+
+            NSString *string = [[NSString alloc] initWithFormat:@"%-6u%s%-30s\t%-32s%@",
+                        [stackFrame depth], [bi isBlamable] ? "+ " : "  ", [binaryName UTF8String],
+                        [addressString UTF8String], comment ?: @""];
+            [addressString release];
+            [comment release];
+
+            [description appendString:string];
+            [description appendString:@"\n"];
+            [string release];
+        }
+        [description appendString:@"\n"];
+    }
+
+    // Add register state.
+    [description appendString:[[self registerState] componentsJoinedByString:@"\n"]];
+    [description appendString:@"\n"];
+    [description appendString:@"\n"];
+
+    // Add binary images.
+    [description appendString:@"Binary Images:\n"];
+    NSArray *imageAddresses = [[binaryImages allKeys] sortedArrayUsingSelector:@selector(compare:)];
+    for (NSString *key in imageAddresses) {
+        BinaryInfo *bi = [binaryImages objectForKey:key];
+        uint64_t imageAddress = [bi address];
+        NSString *string = [[NSString alloc] initWithFormat:@"0x%08llx - 0x%08llx %@ %@  %@ %@",
+            imageAddress, imageAddress + [bi size], [[bi path] lastPathComponent], [bi architecture], [bi uuid], [bi path]];
+        [description appendString:string];
+        [description appendString:@"\n"];
+        [string release];
+    }
+
+    // Update the property dictionary.
+    NSMutableDictionary *properties = [[NSMutableDictionary alloc] initWithDictionary:[self properties]];
+    [properties setObject:description forKey:kCrashReportDescription];
+    [description release];
+    [self setProperties:properties];
+    [properties release];
 }
 
 @end
