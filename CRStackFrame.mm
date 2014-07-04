@@ -2,8 +2,10 @@
 
 @implementation CRStackFrame
 
+@synthesize symbolInfo = symbolInfo_;
+
 - (void)dealloc {
-    [_symbolInfo release];
+    [symbolInfo_ release];
     [super dealloc];
 }
 
