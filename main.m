@@ -98,14 +98,18 @@ int main(int argc, char *argv[]) {
             [mapFiles release];
 
             // Symbolicate threads in the report.
-            [report symbolicateUsingSymbolMaps:symbolMaps];
+            if (![report symbolicateUsingSymbolMaps:symbolMaps]) {
+                fprintf(stderr, "WARNING: Failed to symbolicate.");
+            }
             [symbolMaps release];
 
             // Load blame filters.
             NSDictionary *filters = [[NSDictionary alloc] initWithContentsOfFile:@"/etc/symbolicate/whitelist.plist"];
 
             // Process blame.
-            [report blameUsingFilters:filters];
+            if (![report blameUsingFilters:filters]) {
+                fprintf(stderr, "WARNING: Failed to process blame.");
+            }
             [filters release];
 
             // Write out the log file.
