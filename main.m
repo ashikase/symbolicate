@@ -21,7 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <getopt.h>
 #include <string.h>
 
-#import "crashreport.h"
+#import <libsymbolicate/CRCrashReport.h>
 #import "symbolMaps.h"
 
 static void print_usage() {
@@ -81,7 +81,7 @@ int main(int argc, char *argv[]) {
         } else {
             // Parse the log file.
             NSString *inputFileString = [[NSString alloc] initWithUTF8String:inputFile];
-            CrashReport *report = [CrashReport crashReportWithFile:inputFileString];
+            CRCrashReport *report = [CRCrashReport crashReportWithFile:inputFileString];
             [inputFileString release];
 
             // Parse map files (optional).

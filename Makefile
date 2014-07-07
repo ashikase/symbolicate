@@ -3,24 +3,12 @@ PKG_ID = jp.ashikase.symbolicate
 
 symbolicate_INSTALL_PATH = /usr/bin
 symbolicate_OBJC_FILES = \
-    Libraries/RegexKitLite/RegexKitLite.m \
-    CRBacktrace.mm \
-    CRException.mm \
-    CRStackFrame.mm \
-    CRThread.mm \
-    BinaryInfo.mm \
-    MethodInfo.mm \
-    SymbolInfo.mm \
     common.c \
-    demangle.mm \
-    localSymbols.mm \
     main.m \
-    crashreport.mm \
-    symbolicate.mm \
     symbolMaps.m
-symbolicate_LDFLAGS = -lbz2 -licucore
+symbolicate_LDFLAGS = -lbz2 -licucore -lsymbolicate
 symbolicate_PRIVATE_FRAMEWORKS = Symbolication
-ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\" -I Libraries
+ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\" -ILibraries
 
 ARCHS = armv6
 TARGET = iphone
