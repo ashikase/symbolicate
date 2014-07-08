@@ -166,6 +166,8 @@ int main(int argc, char *argv[]) {
             notify_register_check(PKG_ID".progress", &token);
             notify_set_state(token, 100);
             notify_post(PKG_ID".progress");
+
+            ret = 0;
         }
     }
 
