@@ -76,6 +76,7 @@ int main(int argc, char *argv[]) {
                     break;
                 default:
                     print_usage();
+                    goto exit;
             }
         }
 
@@ -125,6 +126,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+exit:
     [pool drain];
     return ret;
 }
