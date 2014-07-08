@@ -116,7 +116,7 @@ int main(int argc, char *argv[]) {
             }
 
             // Load blame filters.
-            NSDictionary *filters = [[NSDictionary alloc] initWithContentsOfFile:@"/etc/symbolicate/whitelist.plist"];
+            NSDictionary *filters = [[NSDictionary alloc] initWithContentsOfFile:@"/etc/symbolicate/blame_filters.plist"];
 
             // Process blame.
             if (![report blameUsingFilters:filters]) {
