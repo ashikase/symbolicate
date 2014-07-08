@@ -34,6 +34,7 @@ static void print_usage() {
             "    -m <path,file>    Provide symbol map file for specified binary image path.\n"
             "                      If file ends with \".bz2\", bzip2 compression is assumed.\n"
             "    -o <file>         Write output to file instead of to stdout.\n"
+            "    --print-blame     Print just list of suspects, from most to least likely.\n"
             "\n"
            );
 }
@@ -49,10 +50,13 @@ int main(int argc, char *argv[]) {
         const char *outputFile = NULL;
         NSMutableDictionary *mapFiles = [NSMutableDictionary new];
         BOOL shouldSymbolicate = YES;
+        BOOL shouldPrintBlame = NO;
 
         int blameOnlyFlag = 0;
+        int printBlameFlag = 0;
         struct option longopts[] = {
             { "blame-only", no_argument, &blameOnlyFlag, 1 },
+            { "print-blame", no_argument, &printBlameFlag, 1 },
             { NULL, 0, NULL, 0 }
         };
 
@@ -73,6 +77,7 @@ int main(int argc, char *argv[]) {
                     break;
                 case 0:
                     shouldSymbolicate = (blameOnlyFlag == 0);
+                    shouldPrintBlame = (printBlameFlag == 1);
                     break;
                 default:
                     print_usage();
@@ -119,10 +124,37 @@ int main(int argc, char *argv[]) {
             }
             [filters release];
 
-            // Write out the log file.
+            // Determine what to output.
+            NSString *outputString = nil;
+            if (shouldPrintBlame) {
+                // Output the blame.
+                NSMutableString *string = [NSMutableString string];
+                NSArray *blame = [[report properties] objectForKey:kCrashReportBlame];
+                for (NSString *suspect in blame) {
+                    [string appendString:suspect];
+                    [string appendString:@"\n"];
+                }
+                outputString = string;
+            } else {
+                // Output the log file.
+                outputString = [report stringRepresentation];
+            }
+
+            // Write out the output.
             NSString *filepath = (outputFile != NULL) ? [[NSString alloc] initWithUTF8String:outputFile] : nil;
-            [report writeToFile:filepath forcePropertyList:NO];
-            [filepath release];
+            if (filepath != nil) {
+                // Write to file.
+                NSError *error = nil;
+                if ([outputString writeToFile:filepath atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
+                    fprintf(stderr, "INFO: Result written to %s.\n", [filepath UTF8String]);
+                } else {
+                    fprintf(stderr, "ERROR: Unable to write to file: %s.\n", [[error localizedDescription] UTF8String]);
+                }
+                [filepath release];
+            } else {
+                // Print to screen.
+                printf("%s", [outputString UTF8String]);
+            }
         }
     }
 
