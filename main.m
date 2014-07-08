@@ -96,6 +96,9 @@ int main(int argc, char *argv[]) {
             NSString *inputFileString = [[NSString alloc] initWithUTF8String:inputFile];
             CRCrashReport *report = [CRCrashReport crashReportWithFile:inputFileString];
             [inputFileString release];
+            if (report == nil) {
+                goto exit;
+            }
 
             if (shouldSymbolicate) {
                 // Parse map files (optional).
