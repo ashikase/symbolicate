@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <getopt.h>
+#include <notify.h>
 #include <string.h>
 
 #import <libsymbolicate/CRCrashReport.h>
@@ -157,6 +158,14 @@ int main(int argc, char *argv[]) {
                 // Print to screen.
                 printf("%s", [outputString UTF8String]);
             }
+
+            // Send notification of completion.
+            // NOTE: This is for backwards-compatibility. Some packages that
+            //       call symbolicate expect to be notified with status updates.
+            int token;
+            notify_register_check(PKG_ID".progress", &token);
+            notify_set_state(token, 100);
+            notify_post(PKG_ID".progress");
         }
     }
 
