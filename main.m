@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
         };
 
         int c;
-        while ((c = getopt_long(argc, argv, "m:o:", longopts, NULL)) != -1) {
+        while ((c = getopt_long(argc, argv, "m:n:o:", longopts, NULL)) != -1) {
             switch (c) {
                 case 'm': {
                     char *path = strtok(optarg, ",");
@@ -72,6 +72,8 @@ int main(int argc, char *argv[]) {
                     }
                     break;
                 }
+                case 'n':
+                    break;
                 case 'o':
                     outputFile = optarg;
                     break;
