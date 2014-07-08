@@ -29,6 +29,8 @@ static void print_usage() {
             "Usage: symbolicate [<options>] <file>\n"
             "\n"
             "Options:\n"
+            "    --blame-only      Process blame without symbolicating.\n"
+            "                      Note that function filters will not work in this case.\n"
             "    -m <path,file>    Provide symbol map file for specified binary image path.\n"
             "                      If file ends with \".bz2\", bzip2 compression is assumed.\n"
             "    -o <file>         Write output to file instead of to stdout.\n"
@@ -46,9 +48,16 @@ int main(int argc, char *argv[]) {
     } else {
         const char *outputFile = NULL;
         NSMutableDictionary *mapFiles = [NSMutableDictionary new];
+        BOOL shouldSymbolicate = YES;
+
+        int blameOnlyFlag = 0;
+        struct option longopts[] = {
+            { "blame-only", no_argument, &blameOnlyFlag, 1 },
+            { NULL, 0, NULL, 0 }
+        };
 
         int c;
-        while ((c = getopt (argc, argv, "m:o:")) != -1) {
+        while ((c = getopt_long(argc, argv, "m:o:", longopts, NULL)) != -1) {
             switch (c) {
                 case 'm': {
                     char *path = strtok(optarg, ",");
@@ -62,8 +71,11 @@ int main(int argc, char *argv[]) {
                 case 'o':
                     outputFile = optarg;
                     break;
-                default:
+                case 0:
+                    shouldSymbolicate = (blameOnlyFlag == 0);
                     break;
+                default:
+                    print_usage();
             }
         }
 
@@ -76,24 +88,26 @@ int main(int argc, char *argv[]) {
             CRCrashReport *report = [CRCrashReport crashReportWithFile:inputFileString];
             [inputFileString release];
 
-            // Parse map files (optional).
-            NSMutableDictionary *symbolMaps = [NSMutableDictionary new];
-            for (NSString *imagePath in mapFiles) {
-                NSString *mapFile = [mapFiles objectForKey:imagePath];
-                NSDictionary *result = parseMapFile(mapFile);
-                if (result != nil) {
-                    [symbolMaps setObject:result forKey:imagePath];
-                } else {
-                    fprintf(stderr, "WARNING: Unable to read map file \"%s\".\n", [mapFile UTF8String]);
+            if (shouldSymbolicate) {
+                // Parse map files (optional).
+                NSMutableDictionary *symbolMaps = [NSMutableDictionary new];
+                for (NSString *imagePath in mapFiles) {
+                    NSString *mapFile = [mapFiles objectForKey:imagePath];
+                    NSDictionary *result = parseMapFile(mapFile);
+                    if (result != nil) {
+                        [symbolMaps setObject:result forKey:imagePath];
+                    } else {
+                        fprintf(stderr, "WARNING: Unable to read map file \"%s\".\n", [mapFile UTF8String]);
+                    }
                 }
-            }
-            [mapFiles release];
+                [mapFiles release];
 
-            // Symbolicate threads in the report.
-            if (![report symbolicateUsingSymbolMaps:symbolMaps]) {
-                fprintf(stderr, "WARNING: Failed to symbolicate.");
+                // Symbolicate threads in the report.
+                if (![report symbolicateUsingSymbolMaps:symbolMaps]) {
+                    fprintf(stderr, "WARNING: Failed to symbolicate.");
+                }
+                [symbolMaps release];
             }
-            [symbolMaps release];
 
             // Load blame filters.
             NSDictionary *filters = [[NSDictionary alloc] initWithContentsOfFile:@"/etc/symbolicate/whitelist.plist"];
