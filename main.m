@@ -31,10 +31,6 @@ static void print_usage() {
             "Options:\n"
             "    -m <path,file>    Provide symbol map file for specified binary image path.\n"
             "                      If file ends with \".bz2\", bzip2 compression is assumed.\n"
-            "    -n <step>         Send notifications of progress via notify_post().\n"
-            "                      The notification name is \""PKG_ID".progress\".\n"
-            "                      Progress percentage is obtainable via notify_get_state().\n"
-            "                      Step value can be any integer 1-100.\n"
             "    -o <file>         Write output to file instead of to stdout.\n"
             "\n"
            );
@@ -50,10 +46,9 @@ int main(int argc, char *argv[]) {
     } else {
         const char *outputFile = NULL;
         NSMutableDictionary *mapFiles = [NSMutableDictionary new];
-        unsigned progressStepping = 0;
 
         int c;
-        while ((c = getopt (argc, argv, "m:n:o:")) != -1) {
+        while ((c = getopt (argc, argv, "m:o:")) != -1) {
             switch (c) {
                 case 'm': {
                     char *path = strtok(optarg, ",");
@@ -64,9 +59,6 @@ int main(int argc, char *argv[]) {
                     }
                     break;
                 }
-                case 'n':
-                    progressStepping = atoi(optarg);
-                    break;
                 case 'o':
                     outputFile = optarg;
                     break;
