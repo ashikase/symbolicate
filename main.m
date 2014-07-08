@@ -113,7 +113,7 @@ int main(int argc, char *argv[]) {
 
                 // Symbolicate threads in the report.
                 if (![report symbolicateUsingSymbolMaps:symbolMaps]) {
-                    fprintf(stderr, "WARNING: Failed to symbolicate.");
+                    fprintf(stderr, "WARNING: Failed to symbolicate.\n");
                 }
                 [symbolMaps release];
             }
@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) {
 
             // Process blame.
             if (![report blameUsingFilters:filters]) {
-                fprintf(stderr, "WARNING: Failed to process blame.");
+                fprintf(stderr, "WARNING: Failed to process blame.\n");
             }
             [filters release];
 
