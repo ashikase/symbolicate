@@ -36,6 +36,8 @@ static void print_usage() {
             "                      If file ends with \".bz2\", bzip2 compression is assumed.\n"
             "    -o <file>         Write output to file instead of to stdout.\n"
             "    --print-blame     Print just list of suspects, from most to least likely.\n"
+            "    --sysroot=<path>  Use 'path' as the root path when loading binaries and shared caches.\n"
+            "                      (e.g. <sysroot>/System/Library/Caches/com.apple.dyld/dyld...)\n"
             "\n"
            );
 }
@@ -49,6 +51,7 @@ int main(int argc, char *argv[]) {
         print_usage();
     } else {
         const char *outputFile = NULL;
+        const char *sysroot = NULL;
         NSMutableDictionary *mapFiles = [NSMutableDictionary new];
         BOOL shouldSymbolicate = YES;
         BOOL shouldPrintBlame = NO;
@@ -58,6 +61,7 @@ int main(int argc, char *argv[]) {
         struct option longopts[] = {
             { "blame-only", no_argument, &blameOnlyFlag, 1 },
             { "print-blame", no_argument, &printBlameFlag, 1 },
+            { "sysroot", required_argument, NULL, '/' },
             { NULL, 0, NULL, 0 }
         };
 
@@ -77,6 +81,9 @@ int main(int argc, char *argv[]) {
                     break;
                 case 'o':
                     outputFile = optarg;
+                    break;
+                case '/':
+                    sysroot = optarg;
                     break;
                 case 0:
                     shouldSymbolicate = (blameOnlyFlag == 0);
@@ -114,10 +121,17 @@ int main(int argc, char *argv[]) {
                 }
                 [mapFiles release];
 
+                // Set system root to use.
+                NSString *systemRoot = nil;
+                if (sysroot != NULL) {
+                    systemRoot = [[NSString alloc] initWithFormat:@"%s", sysroot];
+                }
+
                 // Symbolicate threads in the report.
-                if (![report symbolicateUsingSymbolMaps:symbolMaps]) {
+                if (![report symbolicateUsingSystemRoot:systemRoot symbolMaps:symbolMaps]) {
                     fprintf(stderr, "WARNING: Failed to symbolicate.\n");
                 }
+                [systemRoot release];
                 [symbolMaps release];
             }
 
