@@ -1,3 +1,12 @@
+/**
+ * Name: symbolicate
+ * Type: iOS/OS X shared command line tool
+ * Desc: Tool for parsing and symbolicating iOS crash log files.
+ *
+ * Author: Lance Fetters (aka. ashikase)
+ * License: GPL v3 (See LICENSE file for details)
+ */
+
 #import "symbolMaps.h"
 
 #import <RegexKitLite/RegexKitLite.h>
