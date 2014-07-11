@@ -178,6 +178,8 @@ int main(int argc, char *argv[]) {
     }
 
 exit:
+    // FIXME: Is it actually necessary to drain the pool on exit?
+    //        Draining the pool is actually quite slow.
     [pool drain];
     return ret;
 }
