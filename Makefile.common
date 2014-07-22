@@ -6,7 +6,7 @@ symbolicate_OBJC_FILES = \
     common.c \
     main.m \
     symbolMaps.m
-symbolicate_LDFLAGS = -lbz2 -licucore -lsymbolicate
+symbolicate_LDFLAGS = -lbz2 -lsymbolicate
 symbolicate_PRIVATE_FRAMEWORKS = Symbolication
 ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\" -ILibraries
 
