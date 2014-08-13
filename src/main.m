@@ -11,7 +11,7 @@
 #include <notify.h>
 #include <string.h>
 
-#import <libsymbolicate/CRCrashReport.h>
+#import <libcrashreport/libcrashreport.h>
 #import "symbolMaps.h"
 
 static void print_usage() {

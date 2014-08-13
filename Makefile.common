@@ -3,12 +3,11 @@ PKG_ID = jp.ashikase.symbolicate
 
 symbolicate_INSTALL_PATH = /usr/bin
 symbolicate_OBJC_FILES = \
-    common.c \
-    main.m \
-    symbolMaps.m
-symbolicate_LDFLAGS = -lbz2 -lsymbolicate
-symbolicate_PRIVATE_FRAMEWORKS = Symbolication
-ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\" -ILibraries
+    src/common.c \
+    src/main.m \
+    src/symbolMaps.m
+symbolicate_LDFLAGS = -lbz2 -Llib -lcrashreport
+ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\" -ILibraries -Iinclude
 
 include theos/makefiles/common.mk
 include $(THEOS)/makefiles/tool.mk
