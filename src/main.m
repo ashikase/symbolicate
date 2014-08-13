@@ -21,6 +21,8 @@ static void print_usage() {
             "Options:\n"
             "    --blame-only      Process blame without symbolicating.\n"
             "                      Note that function filters will not work in this case.\n"
+            "    -f <filter-type>  Choose the method of blame filtering: \"none\", \"file\", \"package\".\n"
+            "                      (The default is \"file\", which will use the included filter file.)\n"
             "    -m <path,file>    Provide symbol map file for specified binary image path.\n"
             "                      If file ends with \".bz2\", bzip2 compression is assumed.\n"
             "    -o <file>         Write output to file instead of to stdout.\n"
@@ -42,6 +44,7 @@ int main(int argc, char *argv[]) {
         const char *outputFile = NULL;
         const char *sysroot = NULL;
         NSMutableDictionary *mapFiles = [NSMutableDictionary new];
+        CRCrashReportFilterType filterType = CRCrashReportFilterTypeFile;
         BOOL shouldSymbolicate = YES;
         BOOL shouldPrintBlame = NO;
 
@@ -55,8 +58,14 @@ int main(int argc, char *argv[]) {
         };
 
         int c;
-        while ((c = getopt_long(argc, argv, "m:n:o:", longopts, NULL)) != -1) {
+        while ((c = getopt_long(argc, argv, "f:m:n:o:", longopts, NULL)) != -1) {
             switch (c) {
+                case 'f':
+                    if (strcmp(optarg, "package") == 0) {
+                        filterType = CRCrashReportFilterTypePackage;
+                    } else if (strcmp(optarg, "none") == 0) {
+                        filterType = CRCrashReportFilterTypeNone;
+                    }
                 case 'm': {
                     char *path = strtok(optarg, ",");
                     char *file = strtok(NULL, ",");
@@ -90,7 +99,7 @@ int main(int argc, char *argv[]) {
         } else {
             // Parse the log file.
             NSString *inputFileString = [[NSString alloc] initWithUTF8String:inputFile];
-            CRCrashReport *report = [CRCrashReport crashReportWithFile:inputFileString];
+            CRCrashReport *report = [CRCrashReport crashReportWithFile:inputFileString filterType:filterType];
             [inputFileString release];
             if (report == nil) {
                 goto exit;
