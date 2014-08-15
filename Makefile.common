@@ -6,8 +6,8 @@ symbolicate_OBJC_FILES = \
     src/common.c \
     src/main.m \
     src/symbolMaps.m
-symbolicate_LDFLAGS = -lbz2 -Llib -lcrashreport
-ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\" -ILibraries -Iinclude
+symbolicate_LIBRARIES = bz2 crashreport
+ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\" -ILibraries
 
 include theos/makefiles/common.mk
 include $(THEOS)/makefiles/tool.mk
