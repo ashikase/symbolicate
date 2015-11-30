@@ -6,7 +6,7 @@ Description: Tool to symbolicate crash logs.
     This tool is based upon CrashReporter by kennytm.
 Architecture: iphoneos-arm
 Pre-Depends: firmware (>=3.0)
-Depends: jp.ashikase.libcrashreport
+Depends: jp.ashikase.libcrashreport (>= 1.1.0)
 Depiction: http://moreinfo.thebigboss.org/moreinfo/depiction.php?file=symbolicateData
 Homepage: http://github.com/ashikase/symbolicate
 Maintainer: BigBoss <bigboss@thebigboss.org>
