@@ -1,5 +1,13 @@
 Release Notes
 
+> # Version 1.8.0
+> ## Released 2018-04-23
+> - - -
+> * NEW: iOS 11
+>     * Added initial support for iOS 11 (Electra jailbreak).
+
+- - -
+
 > # Version 1.7.0
 > ## Released 2015-11-30
 > - - -
