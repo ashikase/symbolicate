@@ -7,6 +7,8 @@ symbolicate_OBJC_FILES = \
     src/main.m \
     src/symbolMaps.m
 symbolicate_LIBRARIES = bz2 crashreport
+symbolicate_CODESIGN_FLAGS="-SEntitlements.plist"
+
 ADDITIONAL_CFLAGS = -DPKG_ID=\"$(PKG_ID)\" -ILibraries
 
 include theos/makefiles/common.mk
